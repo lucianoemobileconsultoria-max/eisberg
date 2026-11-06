@@ -98,7 +98,30 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 17px;
 }
 .field:focus-within { border-color: var(--red); box-shadow: 0 0 0 2px rgba(217, 20, 30, .15); }
-.field.invalid { border-color: var(--red); }
+.field.invalid {
+  border-color: var(--red) !important;
+  background: #fff8f8;
+  box-shadow: 0 0 0 3px rgba(217, 20, 30, .18);
+}
+.field.invalid legend {
+  color: var(--red);
+  font-weight: 700;
+}
+.req {
+  color: var(--red);
+  font-weight: 900;
+  margin-left: 2px;
+}
+@keyframes field-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.field-shake {
+  animation: field-shake 0.35s ease-in-out;
+}
 .field.readonly-field { background: #f4f4f4; border-color: #aaa; }
 .field.readonly-field input { color: #444; font-weight: 700; cursor: default; }
 .row { display: flex; gap: 10px; }
@@ -261,6 +284,90 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .modal h2 { margin: 0 0 8px; color: var(--red); }
 .modal .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+
+/* Modal ENVIANDO PEDIDO com Barra de Progresso */
+.sending-modal {
+  text-align: center;
+  max-width: 380px;
+  padding: 28px 22px 24px;
+  border-radius: 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .3);
+  animation: pw-pop .25s cubic-bezier(.2, .9, .3, 1.2);
+}
+.sending-icon-box {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff0f1;
+  border-radius: 50%;
+  border: 2px solid #ffd2d5;
+}
+.sending-mascot {
+  width: 48px;
+  height: 56px;
+  object-fit: contain;
+}
+.pulse {
+  animation: pulse-anim 1.2s infinite ease-in-out;
+}
+@keyframes pulse-anim {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+.sending-title {
+  margin: 0 0 6px;
+  color: var(--red);
+  font-family: Impact, "Arial Black", sans-serif;
+  letter-spacing: 0.5px;
+  font-size: 25px;
+}
+.sending-status {
+  margin: 0 0 16px;
+  font-size: 14.5px;
+  color: var(--muted);
+  min-height: 20px;
+}
+.progress-wrap {
+  width: 100%;
+  height: 16px;
+  background: #eee;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .15);
+  margin-bottom: 8px;
+}
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #d9141e, #ff424d);
+  border-radius: 10px;
+  transition: width 0.22s ease-out;
+  background-size: 30px 30px;
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, .25) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, .25) 50%,
+    rgba(255, 255, 255, .25) 75%,
+    transparent 75%,
+    transparent
+  );
+  animation: progress-stripes 1s linear infinite;
+}
+@keyframes progress-stripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 0; }
+}
+.progress-pct {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--red);
+}
 
 /* Campo Total (admin e app) */
 .total-box {

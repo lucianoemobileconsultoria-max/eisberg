@@ -122,51 +122,98 @@
     return linhas.join('\n');
   }
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function updateProgress(pct, statusText) {
+    const bar = $('sending-progress-bar');
+    const pctEl = $('sending-progress-pct');
+    const statusEl = $('sending-status');
+    const wrap = bar ? bar.parentElement : null;
+    if (bar) bar.style.width = pct + '%';
+    if (wrap) wrap.setAttribute('aria-valuenow', pct);
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (statusEl && statusText) statusEl.textContent = statusText;
+  }
+
   async function enviar(ev) {
     ev.preventDefault();
     fail('');
-    $('f-cliente').classList.remove('invalid');
-    $('f-endereco').classList.remove('invalid');
-    $('f-cidade').classList.remove('invalid');
 
-    const cliente = $('cliente').value.trim();
-    const endereco = $('endereco').value.trim();
-    const cidade = $('cidade').value.trim();
+    const camposObrigatorios = [
+      { id: 'cliente', nome: 'Cliente', field: $('f-cliente') },
+      { id: 'endereco', nome: 'Endereço', field: $('f-endereco') },
+      { id: 'cidade', nome: 'Cidade', field: $('f-cidade') }
+    ];
 
-    if (!cliente) {
-      $('f-cliente').classList.add('invalid');
-      $('cliente').focus();
-      return fail('Por favor, preencha o campo Cliente.');
+    let primeiroVazio = null;
+    camposObrigatorios.forEach((c) => {
+      const val = $(c.id) ? $(c.id).value.trim() : '';
+      if (!val) {
+        if (c.field) {
+          c.field.classList.add('invalid');
+          c.field.classList.remove('field-shake');
+          void c.field.offsetWidth; // reflow para reiniciar animação
+          c.field.classList.add('field-shake');
+        }
+        if (!primeiroVazio) primeiroVazio = c;
+      } else {
+        if (c.field) c.field.classList.remove('invalid', 'field-shake');
+      }
+    });
+
+    if (primeiroVazio) {
+      if (primeiroVazio.field) {
+        primeiroVazio.field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      if ($(primeiroVazio.id)) $(primeiroVazio.id).focus();
+      return fail(`Por favor, preencha o campo obrigatório (*): ${primeiroVazio.nome}`);
     }
-    if (!endereco) {
-      $('f-endereco').classList.add('invalid');
-      $('endereco').focus();
-      return fail('Por favor, preencha o campo Endereço.');
+
+    if (!qty.size) {
+      $('catalog').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return fail('Adicione ao menos um item ao pedido antes de enviar.');
     }
-    if (!cidade) {
-      $('f-cidade').classList.add('invalid');
-      $('cidade').focus();
-      return fail('Por favor, preencha o campo Cidade.');
-    }
-    if (!qty.size) return fail('Adicione ao menos um item ao pedido.');
 
     const btn = $('send');
+    const sendingOverlay = $('sending-overlay');
     btn.disabled = true;
+
     try {
       if (!client) throw new Error('Cliente Supabase não inicializado');
-      const j = await client.criarPedido({
-        cliente,
-        endereco: $('endereco').value,
-        cidade: $('cidade').value,
+
+      // Exibe modal com barra de progresso
+      updateProgress(15, 'Validando informações do pedido...');
+      if (sendingOverlay) sendingOverlay.hidden = false;
+      await sleep(220);
+
+      updateProgress(45, 'Conectando ao sistema Eisberg...');
+      await sleep(220);
+
+      updateProgress(75, 'Gravando pedido no banco de dados...');
+      const pedidoPromise = client.criarPedido({
+        cliente: $('cliente').value.trim(),
+        endereco: $('endereco').value.trim(),
+        cidade: $('cidade').value.trim(),
         cod: $('cod').value,
         data: $('data').value,
         observacoes: $('observacoes').value,
         itens: [...qty].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
       });
+
+      await sleep(250);
+      updateProgress(90, 'Gerando comprovante e link do WhatsApp...');
+
+      const j = await pedidoPromise;
+
+      updateProgress(100, 'Pedido enviado com sucesso!');
+      await sleep(400);
+
+      if (sendingOverlay) sendingOverlay.hidden = true;
       $('done-id').textContent = '#' + j.id;
       $('done-wa').href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensagemWhatsApp(j))}`;
       $('done').hidden = false;
     } catch (e) {
+      if (sendingOverlay) sendingOverlay.hidden = true;
       fail(e.message || 'Falha ao enviar pedido');
     } finally {
       btn.disabled = false;
@@ -190,6 +237,10 @@
     qty.clear();
     render();
     updateSummary();
+    ['f-cliente', 'f-endereco', 'f-cidade'].forEach((id) => {
+      const f = $(id);
+      if (f) f.classList.remove('invalid', 'field-shake');
+    });
     $('done').hidden = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -205,7 +256,7 @@
       if (elInp) {
         elInp.addEventListener('input', () => {
           const f = $('f-' + id);
-          if (f) f.classList.remove('invalid');
+          if (f) f.classList.remove('invalid', 'field-shake');
           if ($('error')) fail('');
         });
       }

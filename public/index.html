@@ -35,18 +35,18 @@
 
     <form id="form" novalidate autocomplete="off">
       <fieldset class="field" id="f-cliente">
-        <legend>Cliente *</legend>
+        <legend>Cliente <span class="req">*</span></legend>
         <input type="text" id="cliente" maxlength="120" required placeholder="Nome completo ou da empresa">
       </fieldset>
 
       <fieldset class="field" id="f-endereco">
-        <legend>Endereço *</legend>
+        <legend>Endereço <span class="req">*</span></legend>
         <input type="text" id="endereco" maxlength="200" required placeholder="Rua, número, bairro">
       </fieldset>
 
       <div class="row">
         <fieldset class="field" id="f-cidade">
-          <legend>Cidade *</legend>
+          <legend>Cidade <span class="req">*</span></legend>
           <input type="text" id="cidade" maxlength="80" required placeholder="Sua cidade">
         </fieldset>
         <fieldset class="field readonly-field">
@@ -89,6 +89,23 @@
     <div class="pwa-buttons">
       <button type="button" id="btn-pwa-dismiss" class="btn-pwa-close" aria-label="Fechar">✕</button>
       <button type="button" id="btn-pwa-install" class="btn sm">Instalar</button>
+    </div>
+  </div>
+
+  <!-- Modal ENVIANDO PEDIDO com Barra de Progresso -->
+  <div class="overlay" id="sending-overlay" hidden>
+    <div class="modal sending-modal" role="dialog" aria-modal="true" aria-labelledby="sending-title">
+      <div class="sending-icon-box">
+        <img src="img/mascote.svg" alt="Mascote" class="sending-mascot pulse">
+      </div>
+      <h2 id="sending-title" class="sending-title">ENVIANDO PEDIDO...</h2>
+      <p id="sending-status" class="sending-status">Conectando ao sistema...</p>
+      
+      <!-- Barra de Progresso -->
+      <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-bar" id="sending-progress-bar" style="width: 0%;"></div>
+      </div>
+      <span class="progress-pct" id="sending-progress-pct">0%</span>
     </div>
   </div>
 
