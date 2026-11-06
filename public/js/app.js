@@ -126,11 +126,27 @@
     ev.preventDefault();
     fail('');
     $('f-cliente').classList.remove('invalid');
+    $('f-endereco').classList.remove('invalid');
+    $('f-cidade').classList.remove('invalid');
+
     const cliente = $('cliente').value.trim();
+    const endereco = $('endereco').value.trim();
+    const cidade = $('cidade').value.trim();
+
     if (!cliente) {
       $('f-cliente').classList.add('invalid');
       $('cliente').focus();
-      return fail('Informe o nome do cliente.');
+      return fail('Por favor, preencha o campo Cliente.');
+    }
+    if (!endereco) {
+      $('f-endereco').classList.add('invalid');
+      $('endereco').focus();
+      return fail('Por favor, preencha o campo Endereço.');
+    }
+    if (!cidade) {
+      $('f-cidade').classList.add('invalid');
+      $('cidade').focus();
+      return fail('Por favor, preencha o campo Cidade.');
     }
     if (!qty.size) return fail('Adicione ao menos um item ao pedido.');
 
@@ -183,6 +199,17 @@
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
     carregarProximoCodigo();
+
+    ['cliente', 'endereco', 'cidade'].forEach((id) => {
+      const elInp = $(id);
+      if (elInp) {
+        elInp.addEventListener('input', () => {
+          const f = $('f-' + id);
+          if (f) f.classList.remove('invalid');
+          if ($('error')) fail('');
+        });
+      }
+    });
 
     // Carrega dados da empresa (nome, fone e whatsapp)
     if (client && client.getConfig) {

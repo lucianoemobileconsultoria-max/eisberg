@@ -124,16 +124,24 @@ language plpgsql security definer
 set search_path = public
 as $$
 declare
-  v_id      bigint := p_id;
-  v_cliente text   := left(trim(coalesce(p_dados ->> 'cliente', '')), 120);
-  v_status  text   := coalesce(p_dados ->> 'status', 'novo');
-  v_item    jsonb;
-  v_prod    record;
-  v_qtd     integer;
-  v_n       integer := 0;
+  v_id       bigint := p_id;
+  v_cliente  text   := left(trim(coalesce(p_dados ->> 'cliente', '')), 120);
+  v_endereco text   := left(trim(coalesce(p_dados ->> 'endereco', '')), 200);
+  v_cidade   text   := left(trim(coalesce(p_dados ->> 'cidade', '')), 80);
+  v_status   text   := coalesce(p_dados ->> 'status', 'novo');
+  v_item     jsonb;
+  v_prod     record;
+  v_qtd      integer;
+  v_n        integer := 0;
 begin
   if v_cliente = '' then
-    raise exception 'Informe o nome do cliente';
+    raise exception 'Por favor, preencha o campo Cliente';
+  end if;
+  if p_cliente_final and v_endereco = '' then
+    raise exception 'Por favor, preencha o campo Endereço';
+  end if;
+  if p_cliente_final and v_cidade = '' then
+    raise exception 'Por favor, preencha o campo Cidade';
   end if;
   if jsonb_typeof(p_dados -> 'itens') is distinct from 'array' then
     raise exception 'Itens inválidos';
@@ -145,8 +153,8 @@ begin
   if v_id is null then
     insert into public.pedidos (cliente, endereco, cidade, cod, data, observacoes, status)
     values (v_cliente,
-            left(trim(coalesce(p_dados ->> 'endereco', '')), 200),
-            left(trim(coalesce(p_dados ->> 'cidade', '')), 80),
+            v_endereco,
+            v_cidade,
             '',
             left(trim(coalesce(p_dados ->> 'data', '')), 20),
             left(trim(coalesce(p_dados ->> 'observacoes', '')), 2000),
@@ -157,8 +165,8 @@ begin
   else
     update public.pedidos
        set cliente     = v_cliente,
-           endereco    = left(trim(coalesce(p_dados ->> 'endereco', '')), 200),
-           cidade      = left(trim(coalesce(p_dados ->> 'cidade', '')), 80),
+           endereco    = v_endereco,
+           cidade      = v_cidade,
            cod         = left(trim(coalesce(p_dados ->> 'cod', '')), 30),
            data        = left(trim(coalesce(p_dados ->> 'data', '')), 20),
            observacoes = left(trim(coalesce(p_dados ->> 'observacoes', '')), 2000),

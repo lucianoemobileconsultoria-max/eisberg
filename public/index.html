@@ -35,19 +35,19 @@
 
     <form id="form" novalidate autocomplete="off">
       <fieldset class="field" id="f-cliente">
-        <legend>Cliente</legend>
-        <input type="text" id="cliente" maxlength="120" required>
+        <legend>Cliente *</legend>
+        <input type="text" id="cliente" maxlength="120" required placeholder="Nome completo ou da empresa">
       </fieldset>
 
-      <fieldset class="field">
-        <legend>Endereço</legend>
-        <input type="text" id="endereco" maxlength="200">
+      <fieldset class="field" id="f-endereco">
+        <legend>Endereço *</legend>
+        <input type="text" id="endereco" maxlength="200" required placeholder="Rua, número, bairro">
       </fieldset>
 
       <div class="row">
-        <fieldset class="field">
-          <legend>Cidade</legend>
-          <input type="text" id="cidade" maxlength="80">
+        <fieldset class="field" id="f-cidade">
+          <legend>Cidade *</legend>
+          <input type="text" id="cidade" maxlength="80" required placeholder="Sua cidade">
         </fieldset>
         <fieldset class="field readonly-field">
           <legend>Cód.</legend>

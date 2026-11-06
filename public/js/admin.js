@@ -275,9 +275,9 @@
     p.itens.forEach((it) => { if (it.produto_id) qtd.set(it.produto_id, (qtd.get(it.produto_id) || 0) + it.quantidade); });
 
     const f = {
-      cliente: el('input', { value: p.cliente, maxlength: '120', required: '' }),
-      endereco: el('input', { value: p.endereco, maxlength: '200' }),
-      cidade: el('input', { value: p.cidade, maxlength: '80' }),
+      cliente: el('input', { value: p.cliente, maxlength: '120', required: '', placeholder: 'Nome completo' }),
+      endereco: el('input', { value: p.endereco, maxlength: '200', required: '', placeholder: 'Rua, número, bairro' }),
+      cidade: el('input', { value: p.cidade, maxlength: '80', required: '', placeholder: 'Cidade' }),
       cod: el('input', { value: p.cod || (id ? String(id) : 'Automático'), readonly: '', style: 'background:#f4f4f4;color:#555;font-weight:700;cursor:default;' }),
       data: el('input', { value: p.data || new Date().toLocaleDateString('pt-BR'), maxlength: '20' }),
       status: el('select', {}, Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: k === p.status }, v))),
