@@ -66,6 +66,9 @@ create index if not exists pedido_itens_pedido_idx on public.pedido_itens (pedid
 create table if not exists public.admins (
   email text primary key
 );
+insert into public.admins (email)
+values ('admin@admin.com')
+on conflict (email) do nothing;
 
 -- Configurações internas (nunca expostas pela API).
 create table if not exists public.app_config (

@@ -114,8 +114,22 @@
     return !!(client && client.getToken());
   }
 
-  function mostrar() {
-    const logado = estaLogado();
+  async function mostrar() {
+    let logado = estaLogado();
+    if (logado) {
+      try {
+        const u = await client.auth.getUser();
+        if (!u || !u.email || u.email.toLowerCase() !== 'admin@admin.com') {
+          sessionStorage.removeItem('eisberg_sb_token');
+          if (client) client.setToken(null);
+          logado = false;
+        }
+      } catch (_) {
+        sessionStorage.removeItem('eisberg_sb_token');
+        if (client) client.setToken(null);
+        logado = false;
+      }
+    }
     $('login').hidden = logado;
     $('panel').hidden = !logado;
     if (logado) carregar();
@@ -136,34 +150,36 @@
     err.hidden = true;
     try {
       if (!client) throw new Error('Cliente Supabase não inicializado');
-      const loginRaw = $('email').value.trim();
+      const loginRaw = $('email').value.trim().toLowerCase();
       const senha = $('senha').value;
 
-      // Suporta tanto e-mail direto (ex: admin@eisberg.com) quanto apenas usuário/login (ex: admin)
-      const emailFinal = loginRaw.includes('@') ? loginRaw : `${loginRaw.toLowerCase()}@eisberg.com`;
+      // O painel admin só deve aceitar "admin@admin.com" (ou "admin") com senha "admin123"
+      const isLoginAdmin = (loginRaw === 'admin@admin.com' || loginRaw === 'admin');
+      if (!isLoginAdmin) {
+        throw new Error('Acesso negado: o painel administrativo aceita exclusivamente o usuário admin@admin.com');
+      }
+      if (senha !== 'admin123') {
+        throw new Error('Senha incorreta para o administrador.');
+      }
 
+      // Autentica no Supabase para obter o token de administrador
       let res;
       try {
-        res = await client.auth.signInWithPassword(emailFinal, senha);
+        res = await client.auth.signInWithPassword('admin@admin.com', 'admin123');
       } catch (authErr) {
-        if (!loginRaw.includes('@')) {
-          try {
-            res = await client.auth.signInWithPassword(loginRaw, senha);
-          } catch (_) {
-            throw authErr;
-          }
-        } else {
-          throw authErr;
-        }
+        console.warn('Erro ao autenticar no Supabase Auth:', authErr);
+        throw new Error(
+          authErr.message === 'Invalid login credentials'
+            ? 'Usuário "admin@admin.com" não localizado com a senha "admin123" no Supabase Authentication. Cadastre-o em Authentication > Users.'
+            : (authErr.message || 'Falha ao autenticar no Supabase')
+        );
       }
 
       sessionStorage.setItem('eisberg_sb_token', res.access_token);
       $('senha').value = '';
       mostrar();
     } catch (e) {
-      err.textContent = e.message === 'Invalid login credentials'
-        ? 'Login ou senha incorretos.'
-        : (e.message || 'Falha ao autenticar');
+      err.textContent = e.message || 'Falha ao autenticar';
       err.hidden = false;
     }
   });

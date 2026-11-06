@@ -270,7 +270,128 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  async function carregarCatalogo() {
+    try {
+      if (!client) throw new Error('Cliente Supabase não carregado');
+      catalogo = await client.getCatalogo();
+      catalogo.forEach((c) => c.produtos.forEach((p) => preco.set(p.id, p.preco)));
+      render();
+    } catch (e) {
+      console.error(e);
+      $('catalog').replaceChildren(
+        el('div', { class: 'error-msg', style: 'padding: 18px 8px; line-height: 1.5;' },
+          el('b', {}, 'Não foi possível carregar os produtos do Supabase.'),
+          el('div', { style: 'font-size: 13px; font-weight: normal; margin-top: 6px; color: #555;' },
+            'Se for a primeira vez, execute o arquivo ',
+            el('code', {}, 'supabase/schema.sql'),
+            ' no SQL Editor do seu projeto Supabase.'
+          )
+        )
+      );
+    }
+  }
+
+  function verificarSessao() {
+    const token = localStorage.getItem('eisberg_user_token');
+    const email = localStorage.getItem('eisberg_user_email') || '';
+    if (token) {
+      if (client) client.setToken(token);
+      $('app-login').hidden = true;
+      $('app-main').hidden = false;
+      const bEmail = $('user-badge-email');
+      if (bEmail) bEmail.textContent = email;
+      if (!$('cliente').value.trim() && email) {
+        $('cliente').value = email.split('@')[0];
+      }
+      carregarCatalogo();
+      return true;
+    } else {
+      $('app-main').hidden = true;
+      $('app-login').hidden = false;
+      return false;
+    }
+  }
+
   async function init() {
+    // Configura autenticação do App de Pedidos
+    verificarSessao();
+
+    $('app-login-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const err = $('app-login-error');
+      err.hidden = true;
+      const btn = $('btn-app-login');
+      btn.disabled = true;
+      btn.textContent = 'Entrando...';
+
+      try {
+        if (!client) throw new Error('Cliente Supabase não inicializado');
+        const loginRaw = $('app-email').value.trim();
+        const senha = $('app-senha').value;
+
+        if (!loginRaw || !senha) {
+          throw new Error('Informe seu login e sua senha.');
+        }
+
+        // Tenta com e-mail direto, ou caso o usuário tenha cadastrado com ou sem @
+        const emailTentativa = loginRaw.includes('@') ? loginRaw : `${loginRaw.toLowerCase()}@eisberg.com`;
+
+        let res;
+        try {
+          res = await client.auth.signInWithPassword(emailTentativa, senha);
+        } catch (authErr) {
+          if (!loginRaw.includes('@')) {
+            try {
+              res = await client.auth.signInWithPassword(loginRaw, senha);
+            } catch (_) {
+              throw authErr;
+            }
+          } else {
+            throw authErr;
+          }
+        }
+
+        const emailFinal = (res.user && res.user.email) || loginRaw;
+        localStorage.setItem('eisberg_user_token', res.access_token);
+        localStorage.setItem('eisberg_user_email', emailFinal);
+
+        client.setToken(res.access_token);
+        $('app-senha').value = '';
+        $('app-login').hidden = true;
+        $('app-main').hidden = false;
+        const bEmail = $('user-badge-email');
+        if (bEmail) bEmail.textContent = emailFinal;
+
+        if (!$('cliente').value.trim()) {
+          $('cliente').value = emailFinal.split('@')[0];
+        }
+
+        carregarCatalogo();
+      } catch (e) {
+        err.textContent = e.message === 'Invalid login credentials'
+          ? 'Login ou senha incorretos no sistema.'
+          : (e.message || 'Falha ao autenticar');
+        err.hidden = false;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+      }
+    });
+
+    const btnLogout = $('btn-app-logout');
+    if (btnLogout) {
+      btnLogout.addEventListener('click', async () => {
+        localStorage.removeItem('eisberg_user_token');
+        localStorage.removeItem('eisberg_user_email');
+        if (client) {
+          try { await client.auth.signOut(); } catch (_) {}
+        }
+        $('app-main').hidden = true;
+        $('app-login').hidden = false;
+        $('app-email').focus();
+      });
+    }
+
     $('data').value = hoje();
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
@@ -331,25 +452,6 @@
           whatsapp = cfg.whatsapp_empresa;
         }
       }).catch(() => {});
-    }
-
-    try {
-      if (!client) throw new Error('Cliente Supabase não carregado');
-      catalogo = await client.getCatalogo();
-      catalogo.forEach((c) => c.produtos.forEach((p) => preco.set(p.id, p.preco)));
-      render();
-    } catch (e) {
-      console.error(e);
-      $('catalog').replaceChildren(
-        el('div', { class: 'error-msg', style: 'padding: 18px 8px; line-height: 1.5;' },
-          el('b', {}, 'Não foi possível carregar os produtos do Supabase.'),
-          el('div', { style: 'font-size: 13px; font-weight: normal; margin-top: 6px; color: #555;' },
-            'Se for a primeira vez, execute o arquivo ',
-            el('code', {}, 'supabase/schema.sql'),
-            ' no SQL Editor do seu projeto Supabase.'
-          )
-        )
-      );
     }
   }
   init();
