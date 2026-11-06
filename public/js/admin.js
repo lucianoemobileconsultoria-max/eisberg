@@ -136,15 +136,33 @@
     err.hidden = true;
     try {
       if (!client) throw new Error('Cliente Supabase não inicializado');
-      const email = $('email').value.trim();
+      const loginRaw = $('email').value.trim();
       const senha = $('senha').value;
-      const res = await client.auth.signInWithPassword(email, senha);
+
+      // Suporta tanto e-mail direto (ex: admin@eisberg.com) quanto apenas usuário/login (ex: admin)
+      const emailFinal = loginRaw.includes('@') ? loginRaw : `${loginRaw.toLowerCase()}@eisberg.com`;
+
+      let res;
+      try {
+        res = await client.auth.signInWithPassword(emailFinal, senha);
+      } catch (authErr) {
+        if (!loginRaw.includes('@')) {
+          try {
+            res = await client.auth.signInWithPassword(loginRaw, senha);
+          } catch (_) {
+            throw authErr;
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
       sessionStorage.setItem('eisberg_sb_token', res.access_token);
       $('senha').value = '';
       mostrar();
     } catch (e) {
       err.textContent = e.message === 'Invalid login credentials'
-        ? 'E-mail ou senha incorretos no Supabase.'
+        ? 'Login ou senha incorretos.'
         : (e.message || 'Falha ao autenticar');
       err.hidden = false;
     }
