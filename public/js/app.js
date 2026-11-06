@@ -13,6 +13,7 @@
 
   const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const preco = new Map(); // produto_id -> preço
+  let gpsCoords = null; // { lat, lng } capturado pelo botão GPS
 
   function el(tag, props = {}, ...children) {
     const e = document.createElement(tag);
@@ -107,6 +108,22 @@
     linhas.push(`*Cliente:* ${p.cliente}`);
     if (p.endereco) linhas.push(`*Endereço:* ${p.endereco}`);
     if (p.cidade) linhas.push(`*Cidade:* ${p.cidade}`);
+
+    // PIN do Google Maps para localização / traçar rota até o cliente
+    let mapsUrl = '';
+    const gps = p.gps || gpsCoords;
+    if (gps && gps.lat && gps.lng) {
+      mapsUrl = `https://maps.google.com/?q=${gps.lat},${gps.lng}`;
+    } else {
+      const endBusca = [p.endereco, p.cidade].filter(Boolean).join(', ');
+      if (endBusca) {
+        mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(endBusca)}`;
+      }
+    }
+    if (mapsUrl) {
+      linhas.push(`📍 *Localização no Maps (PIN):* ${mapsUrl}`);
+    }
+
     if (p.cod) linhas.push(`*Cód.:* ${p.cod}`);
     if (p.data) linhas.push(`*Data:* ${p.data}`);
     let cat = null;
@@ -210,7 +227,8 @@
 
       if (sendingOverlay) sendingOverlay.hidden = true;
       $('done-id').textContent = '#' + j.id;
-      $('done-wa').href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensagemWhatsApp(j))}`;
+      const pedidoComGps = Object.assign({ gps: gpsCoords }, j);
+      $('done-wa').href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensagemWhatsApp(pedidoComGps))}`;
       $('done').hidden = false;
     } catch (e) {
       if (sendingOverlay) sendingOverlay.hidden = true;
@@ -235,6 +253,13 @@
     $('data').value = hoje();
     carregarProximoCodigo();
     qty.clear();
+    gpsCoords = null;
+    const btnGps = $('btn-gps');
+    if (btnGps) {
+      btnGps.textContent = '📍 Usar GPS';
+      btnGps.classList.remove('active');
+      btnGps.disabled = false;
+    }
     render();
     updateSummary();
     ['f-cliente', 'f-endereco', 'f-cidade'].forEach((id) => {
@@ -250,6 +275,33 @@
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
     carregarProximoCodigo();
+
+    const btnGps = $('btn-gps');
+    if (btnGps) {
+      btnGps.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+          alert('Geolocalização não suportada neste navegador.');
+          return;
+        }
+        btnGps.textContent = 'Buscando GPS...';
+        btnGps.disabled = true;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            gpsCoords = { lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) };
+            btnGps.textContent = '📍 GPS ativo ✓';
+            btnGps.classList.add('active');
+            btnGps.disabled = false;
+          },
+          (err) => {
+            console.warn('GPS indisponível:', err.message);
+            btnGps.textContent = '📍 Usar GPS';
+            btnGps.disabled = false;
+            alert('Não foi possível obter a localização do GPS. O endereço digitado será usado para gerar o PIN no Google Maps.');
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      });
+    }
 
     ['cliente', 'endereco', 'cidade'].forEach((id) => {
       const elInp = $(id);

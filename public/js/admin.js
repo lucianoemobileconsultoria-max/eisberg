@@ -247,9 +247,21 @@
     const sel = el('select', { onchange: (e) => mudarStatus(p.id, e.target.value) },
       Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: k === p.status }, v)));
 
+    const enderecoBusca = [p.endereco, p.cidade].filter(Boolean).join(', ');
+    const mapsBtn = enderecoBusca
+      ? el('a', {
+          href: `https://maps.google.com/?q=${encodeURIComponent(enderecoBusca)}`,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          class: 'btn sm secondary',
+          style: 'display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:13px'
+        }, '📍 Abrir no Google Maps (PIN / Traçar Rota)')
+      : null;
+
     openModal('Pedido #' + p.id, el('div', {},
       el('div', { style: 'margin-bottom:10px;line-height:1.6' },
         info('Cliente', p.cliente), info('Endereço', p.endereco), info('Cidade', p.cidade),
+        mapsBtn ? el('div', {}, mapsBtn) : null,
         info('Cód.', p.cod), info('Data', p.data), info('Recebido em', fmtData(p.criado_em)),
         el('div', {}, el('b', {}, 'Status: '), el('span', { class: 'badge ' + p.status }, STATUS[p.status]))),
       el('div', { class: 'table-wrap' }, el('table', { class: 'items-list' },
