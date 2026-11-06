@@ -161,7 +161,12 @@
   });
 
   function carregar() {
-    return guard(() => ({ pedidos: viewPedidos, produtos: viewProdutos, categorias: viewCategorias }[tab]()));
+    return guard(() => ({
+      pedidos: viewPedidos,
+      produtos: viewProdutos,
+      categorias: viewCategorias,
+      empresa: viewEmpresa,
+    }[tab]()));
   }
 
   /* =================================================================
@@ -471,6 +476,67 @@
         viewProdutos();
       },
     });
+  }
+
+  /* =================================================================
+     DADOS DA EMPRESA & WHATSAPP
+     ================================================================= */
+  async function viewEmpresa() {
+    const main = $('main');
+    main.replaceChildren(el('p', { class: 'summary' }, 'Carregando configurações...'));
+
+    const cfg = await client.getConfig();
+
+    const inpNome = el('input', { value: cfg.nome_empresa || 'EISBERG', maxlength: '80', required: '', placeholder: 'Ex: EISBERG' });
+    const inpFone = el('input', { value: cfg.telefone_empresa || '(51) 98177.7079', maxlength: '30', placeholder: 'Ex: (51) 98177.7079' });
+    const inpWa = el('input', { value: cfg.whatsapp_empresa || '5551981777079', maxlength: '20', placeholder: 'Ex: 5551981777079 (com código do país e DDD)' });
+
+    const previewNome = el('h1', { class: 'brand-name', style: 'font-size:32px;margin:0' }, cfg.nome_empresa || 'EISBERG');
+    const previewFone = el('span', { style: 'font-weight:700;color:var(--red);font-size:14px' }, cfg.telefone_empresa || '(51) 98177.7079');
+
+    inpNome.addEventListener('input', () => { previewNome.textContent = inpNome.value.trim() || 'EISBERG'; });
+    inpFone.addEventListener('input', () => { previewFone.textContent = inpFone.value.trim() || '(51) 98177.7079'; });
+
+    const btnSalvar = el('button', { type: 'submit', class: 'btn', style: 'font-size:16px;padding:12px 24px' }, '💾 Salvar Configurações');
+
+    const form = el('form', { style: 'max-width:580px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,0.1)' },
+      el('h3', { style: 'margin:0 0 8px;color:var(--red);font-size:22px' }, '⚙️ Configurações da Empresa e WhatsApp'),
+      el('p', { style: 'color:var(--muted);font-size:14px;margin-bottom:20px;line-height:1.4' },
+        'Ao salvar, o nome da empresa, o telefone exibido no topo e o número de destino para envio dos pedidos no WhatsApp serão atualizados em tempo real em todo o aplicativo.'),
+      
+      group('Nome da Empresa', inpNome),
+      group('Telefone / Celular Exibido no Topo', inpFone),
+      group('Número do WhatsApp para Envio dos Pedidos (com DDD)', inpWa),
+      el('p', { style: 'font-size:12px;color:#888;margin-top:-6px;margin-bottom:18px' },
+        'Dica: Digite apenas números ou com DDD (ex: 51981777079). O link direto do WhatsApp será gerado automaticamente para este número.'),
+
+      el('div', { style: 'background:#fafafa;border:1.5px dashed #ccc;border-radius:10px;padding:14px;margin-bottom:20px' },
+        el('div', { style: 'font-size:12px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px' }, 'Pré-visualização do Topo (Alta Resolução):'),
+        el('div', { style: 'display:flex;align-items:center;gap:10px' },
+          el('img', { src: 'img/mascote.svg', style: 'width:36px;height:58px;object-fit:contain' }),
+          el('div', {}, previewNome, el('div', { style: 'display:flex;align-items:center;gap:4px;margin-top:2px' }, '📞 ', previewFone)))),
+
+      el('div', { style: 'display:flex;gap:10px;align-items:center' }, btnSalvar));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = 'Salvando...';
+      try {
+        const res = await client.salvarConfig(inpNome.value, inpFone.value, inpWa.value);
+        toast('Configurações salvas com sucesso!');
+        const adminName = $('admin-brand-name');
+        if (adminName && res.nome_empresa) adminName.textContent = res.nome_empresa;
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = '💾 Salvar Configurações';
+      } catch (err) {
+        toast(err.message || 'Erro ao salvar configurações', true);
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = '💾 Salvar Configurações';
+      }
+    });
+
+    main.replaceChildren(form);
   }
 
   mostrar();

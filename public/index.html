@@ -16,7 +16,20 @@
 <body>
   <main class="app">
     <header class="app-header">
-      <h1 class="brand-logo"><img src="img/logo.png" alt="EISBERG - (51) 98177.7079"></h1>
+      <div class="brand">
+        <div class="brand-mascot-wrap">
+          <img src="img/mascote.svg" alt="Mascote Eisberg" class="brand-mascot-svg">
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-name" id="empresa-nome">EISBERG</h1>
+          <div class="brand-phone" id="empresa-fone-box">
+            <svg class="wa-icon" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+              <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z"/>
+            </svg>
+            <span id="empresa-fone">(51) 98177.7079</span>
+          </div>
+        </div>
+      </div>
       <h2 class="app-title">PEDIDO</h2>
     </header>
 
@@ -64,6 +77,21 @@
     <div class="footer-admin"><a href="admin.html">Área administrativa</a></div>
   </main>
 
+  <!-- Banner de Instalação PWA -->
+  <div id="pwa-install" class="pwa-banner" hidden>
+    <div class="pwa-content">
+      <img src="img/icon-192.png" alt="EISBERG" class="pwa-icon">
+      <div class="pwa-text">
+        <b>Instalar App EISBERG</b>
+        <span>Abra direto da tela inicial</span>
+      </div>
+    </div>
+    <div class="pwa-buttons">
+      <button type="button" id="btn-pwa-dismiss" class="btn-pwa-close" aria-label="Fechar">✕</button>
+      <button type="button" id="btn-pwa-install" class="btn sm">Instalar</button>
+    </div>
+  </div>
+
   <div class="overlay" id="done" hidden>
     <div class="modal" role="dialog" aria-modal="true">
       <h2>✅ Pedido enviado!</h2>
@@ -81,6 +109,40 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').catch(console.error);
+      });
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = document.getElementById('pwa-install');
+      if (banner && !sessionStorage.getItem('pwa_dismissed')) {
+        banner.hidden = false;
+      }
+    });
+
+    const btnInstall = document.getElementById('btn-pwa-install');
+    if (btnInstall) {
+      btnInstall.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice && choice.outcome === 'accepted') {
+            const banner = document.getElementById('pwa-install');
+            if (banner) banner.hidden = true;
+          }
+          deferredPrompt = null;
+        }
+      });
+    }
+
+    const btnDismiss = document.getElementById('btn-pwa-dismiss');
+    if (btnDismiss) {
+      btnDismiss.addEventListener('click', () => {
+        const banner = document.getElementById('pwa-install');
+        if (banner) banner.hidden = true;
+        sessionStorage.setItem('pwa_dismissed', '1');
       });
     }
   </script>

@@ -73,7 +73,11 @@ create table if not exists public.app_config (
   valor text not null
 );
 insert into public.app_config (chave, valor)
-values ('senha_exclusao', '789512')
+values 
+  ('senha_exclusao', '789512'),
+  ('nome_empresa', 'EISBERG'),
+  ('telefone_empresa', '(51) 98177.7079'),
+  ('whatsapp_empresa', '5551981777079')
 on conflict (chave) do nothing;
 
 -- ---------------------------------------------------------------------
@@ -285,6 +289,49 @@ begin
 end;
 $$;
 
+-- Configurações da Empresa (Nome, Telefone exibido e WhatsApp dos pedidos)
+create or replace function public.obter_config()
+returns jsonb
+language sql stable security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'nome_empresa', coalesce((select valor from public.app_config where chave = 'nome_empresa'), 'EISBERG'),
+    'telefone_empresa', coalesce((select valor from public.app_config where chave = 'telefone_empresa'), '(51) 98177.7079'),
+    'whatsapp_empresa', coalesce((select valor from public.app_config where chave = 'whatsapp_empresa'), '5551981777079')
+  );
+$$;
+
+create or replace function public.salvar_config(p_nome text, p_telefone text, p_whatsapp text)
+returns jsonb
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  v_wa text;
+begin
+  if not public.is_admin() then
+    raise exception 'Acesso negado';
+  end if;
+
+  v_wa := regexp_replace(coalesce(p_whatsapp, p_telefone, ''), '\D', '', 'g');
+  if v_wa <> '' and length(v_wa) in (10, 11) and not v_wa ~ '^55' then
+    v_wa := '55' || v_wa;
+  end if;
+
+  insert into public.app_config (chave, valor) values ('nome_empresa', coalesce(nullif(trim(p_nome), ''), 'EISBERG'))
+    on conflict (chave) do update set valor = excluded.valor;
+
+  insert into public.app_config (chave, valor) values ('telefone_empresa', coalesce(nullif(trim(p_telefone), ''), '(51) 98177.7079'))
+    on conflict (chave) do update set valor = excluded.valor;
+
+  insert into public.app_config (chave, valor) values ('whatsapp_empresa', coalesce(nullif(trim(v_wa), ''), '5551981777079'))
+    on conflict (chave) do update set valor = excluded.valor;
+
+  return public.obter_config();
+end;
+$$;
+
 -- ---------------------------------------------------------------------
 -- 4) Row Level Security
 -- ---------------------------------------------------------------------
@@ -345,9 +392,13 @@ revoke execute on function public.admin_salvar_pedido(bigint, jsonb) from public
 revoke execute on function public.excluir_pedido(bigint, text)     from public;
 revoke execute on function public.excluir_produto(bigint, text)    from public;
 revoke execute on function public.excluir_categoria(bigint, text)  from public;
+revoke execute on function public.obter_config()                   from public;
+revoke execute on function public.salvar_config(text, text, text)  from public;
 grant  execute on function public.is_admin()                       to anon, authenticated;
 grant  execute on function public.proximo_codigo()                 to anon, authenticated;
+grant  execute on function public.obter_config()                   to anon, authenticated;
 grant  execute on function public.criar_pedido(jsonb)              to anon, authenticated;
+grant  execute on function public.salvar_config(text, text, text)  to authenticated;
 grant  execute on function public.admin_salvar_pedido(bigint, jsonb) to authenticated;
 grant  execute on function public.excluir_pedido(bigint, text)     to authenticated;
 grant  execute on function public.excluir_produto(bigint, text)    to authenticated;

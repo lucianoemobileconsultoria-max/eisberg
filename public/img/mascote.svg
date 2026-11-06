@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 160" width="100%" height="100%">
+  <!-- Sombra suave na base -->
+  <ellipse cx="50" cy="154" rx="28" ry="5" fill="#f0d0d0" />
+
+  <!-- Base de neve / pés -->
+  <ellipse cx="50" cy="144" rx="24" ry="12" fill="#ffffff" stroke="#c81018" stroke-width="3.5" />
+  <circle cx="50" cy="146" r="4.5" fill="#c81018" />
+
+  <!-- Corpo / Braços com Luvas Vermelhas -->
+  <ellipse cx="50" cy="108" rx="29" ry="26" fill="#ffffff" stroke="#c81018" stroke-width="3.5" />
+  
+  <!-- Cachecol / Gola Vermelha -->
+  <path d="M 24 82 Q 50 96 76 82 Q 80 92 72 96 Q 50 106 28 96 Z" fill="#d9141e" stroke="#b00d14" stroke-width="1.5" />
+  
+  <!-- Luvas vermelhas unidas na frente -->
+  <ellipse cx="40" cy="122" rx="9" ry="6" fill="#d9141e" transform="rotate(-15 40 122)" stroke="#b00d14" stroke-width="1.5" />
+  <ellipse cx="60" cy="122" rx="9" ry="6" fill="#d9141e" transform="rotate(15 60 122)" stroke="#b00d14" stroke-width="1.5" />
+
+  <!-- Cabeça do boneco de neve -->
+  <circle cx="50" cy="54" r="24" fill="#ffffff" stroke="#c81018" stroke-width="3.5" />
+
+  <!-- Olhos expressivos -->
+  <ellipse cx="43" cy="52" rx="2.5" ry="3.5" fill="#1a1a1a" />
+  <ellipse cx="57" cy="52" rx="2.5" ry="3.5" fill="#1a1a1a" />
+  <circle cx="42" cy="50.5" r="1" fill="#ffffff" />
+  <circle cx="56" cy="50.5" r="1" fill="#ffffff" />
+
+  <!-- Nariz de cenoura fofo apontando para a direita -->
+  <polygon points="50,56 65,58 50,60" fill="#e85d04" stroke="#c81018" stroke-width="1" stroke-linejoin="round" />
+
+  <!-- Sorriso amigável -->
+  <path d="M 42 63 Q 50 69 58 63" fill="none" stroke="#c81018" stroke-width="2.5" stroke-linecap="round" />
+  
+  <!-- Bochechas rosadas -->
+  <ellipse cx="37" cy="58" rx="3.5" ry="2" fill="#ffb3ba" opacity="0.6" />
+  <ellipse cx="63" cy="58" rx="3.5" ry="2" fill="#ffb3ba" opacity="0.6" />
+
+  <!-- Gorro de Papai Noel vermelho -->
+  <path d="M 28 42 Q 50 34 72 42 Q 74 20 54 14 Q 38 10 26 26 Q 16 38 28 42 Z" fill="#d9141e" stroke="#b00d14" stroke-width="2" />
+  
+  <!-- Borda de pele branca do gorro -->
+  <rect x="25" y="38" width="50" height="9" rx="4.5" fill="#ffffff" stroke="#c81018" stroke-width="2.5" />
+  
+  <!-- Pom-pom branco do gorro caído na esquerda -->
+  <circle cx="16" cy="34" r="7.5" fill="#ffffff" stroke="#c81018" stroke-width="2.5" />
+</svg>

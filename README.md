@@ -49,7 +49,8 @@ npm start
     ```
 - **Produtos sem preço:** Produtos com preço zerado aparecem no app com o nome riscado, etiqueta "sem preço" e botões bloqueados. O banco recusa pedidos contendo produtos sem preço.
 - **Cálculo de Total:** Exibição do total em tempo real no app do cliente e no formulário de pedidos do admin.
-- **WhatsApp:** Ao enviar o pedido, abre opção de enviar resumo formatado direto para o WhatsApp `(51) 98177.7079`.
+- **WhatsApp & Dados da Empresa:** No painel admin há a aba **⚙️ Dados da Empresa** onde você altera o nome da marca, o telefone visível e o número de destino do WhatsApp em tempo real.
+- **WhatsApp:** Ao enviar o pedido, abre opção de enviar resumo formatado direto para o WhatsApp cadastrado.
 
 ---
 

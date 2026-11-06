@@ -81,6 +81,31 @@
       },
     };
 
+    // --- Configurações da Empresa (público / admin) ---
+    async function getConfig() {
+      try {
+        var res = await req('/rest/v1/rpc/obter_config', { method: 'POST' });
+        if (res) {
+          if (res.whatsapp_empresa) opts.whatsapp = res.whatsapp_empresa;
+          return res;
+        }
+      } catch (_) {}
+      return {
+        nome_empresa: 'EISBERG',
+        telefone_empresa: '(51) 98177.7079',
+        whatsapp_empresa: opts.whatsapp || '5551981777079'
+      };
+    }
+
+    async function salvarConfig(nome, telefone, whatsapp) {
+      var res = await req('/rest/v1/rpc/salvar_config', {
+        method: 'POST',
+        body: JSON.stringify({ p_nome: nome, p_telefone: telefone, p_whatsapp: whatsapp }),
+      });
+      if (res && res.whatsapp_empresa) opts.whatsapp = res.whatsapp_empresa;
+      return res;
+    }
+
     // --- Catálogo (público) ---
     async function getProximoCodigo() {
       try {
@@ -277,6 +302,8 @@
       setToken: setToken,
       getToken: getToken,
       auth: auth,
+      getConfig: getConfig,
+      salvarConfig: salvarConfig,
       getProximoCodigo: getProximoCodigo,
       getCatalogo: getCatalogo,
       criarPedido: criarPedido,

@@ -23,20 +23,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 
 /* ---------- Marca ---------- */
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand-mascot { font-size: 46px; line-height: 1; }
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-mascot-wrap { width: 44px; height: 72px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand-mascot-svg { width: 100%; height: 100%; object-fit: contain; }
+.brand-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .brand-name {
   margin: 0;
   color: var(--red);
-  font-family: Impact, "Arial Black", sans-serif;
-  font-size: 40px;
+  font-family: Impact, "Arial Black", -apple-system, sans-serif;
+  font-size: 38px;
   letter-spacing: 1px;
+  line-height: 0.95;
+  text-transform: uppercase;
+  word-break: break-word;
+}
+.brand-phone {
+  color: var(--red);
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   line-height: 1;
 }
-.brand-phone { color: var(--red); font-weight: 700; font-size: 16px; margin-top: 2px; }
-
-.brand-logo { margin: 0; line-height: 0; }
-.brand-logo img { height: 74px; width: auto; max-width: 62vw; }
+.wa-icon { fill: var(--red); flex-shrink: 0; }
 
 /* ====================================================================
    APP DE PEDIDOS (cliente)
@@ -432,6 +443,34 @@ td.actions .btn { margin-left: 4px; }
     font-size: 13px;
   }
 }
+
+/* Banner de instalacao PWA */
+.pwa-banner {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  right: 14px;
+  max-width: 460px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1.5px solid var(--red);
+  border-radius: 14px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 99;
+  animation: pw-pop .3s ease-out;
+}
+.pwa-content { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pwa-icon { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
+.pwa-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.pwa-text b { font-size: 13.5px; color: #111; }
+.pwa-text span { font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pwa-buttons { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.btn-pwa-close { border: 0; background: none; font-size: 16px; color: #888; cursor: pointer; padding: 4px; line-height: 1; }
 
 @media print {
   body { background: #fff; }

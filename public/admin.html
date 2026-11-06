@@ -15,7 +15,10 @@
   <!-- Login -->
   <div class="login-wrap" id="login">
     <form class="login-box" id="login-form">
-      <h1 class="brand-logo" style="text-align:center"><img src="img/logo.png" alt="EISBERG"></h1>
+      <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:12px">
+        <img src="img/mascote.svg" alt="Mascote" style="width:38px;height:62px;object-fit:contain">
+        <h1 class="brand-name" id="login-brand-name" style="font-size:36px;margin:0">EISBERG</h1>
+      </div>
       <h2 style="text-align:center;margin:0 0 16px">Administração</h2>
       <div class="form-group"><label for="email">E-mail</label><input type="email" id="email" autocomplete="email" placeholder="seu@email.com" required></div>
       <div class="form-group"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
@@ -29,7 +32,9 @@
   <div id="panel" hidden>
     <header class="admin-bar">
       <div class="brand">
-        <h1 class="brand-name" style="color:#fff;font-size:30px">EISBERG</h1><span class="sub">Administração</span>
+        <img src="img/mascote.svg" alt="Mascote" style="width:28px;height:46px;object-fit:contain">
+        <h1 class="brand-name" style="color:#fff;font-size:28px" id="admin-brand-name">EISBERG</h1>
+        <span class="sub" style="font-size:14px">Administração</span>
       </div>
       <div style="display:flex;gap:8px">
         <a class="btn sm" href="index.html" target="_blank">Ver app</a>
@@ -40,6 +45,7 @@
       <button data-tab="pedidos" class="active">Pedidos</button>
       <button data-tab="produtos">Produtos</button>
       <button data-tab="categorias">Categorias</button>
+      <button data-tab="empresa">⚙️ Dados da Empresa</button>
     </nav>
     <main class="admin-main" id="main"></main>
   </div>

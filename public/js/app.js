@@ -102,7 +102,8 @@
   }
 
   function mensagemWhatsApp(p) {
-    const linhas = [`*EISBERG - PEDIDO #${p.id}*`, ''];
+    const nomeEmpresa = ($('empresa-nome') && $('empresa-nome').textContent.trim()) || 'EISBERG';
+    const linhas = [`*${nomeEmpresa} - PEDIDO #${p.id}*`, ''];
     linhas.push(`*Cliente:* ${p.cliente}`);
     if (p.endereco) linhas.push(`*Endereço:* ${p.endereco}`);
     if (p.cidade) linhas.push(`*Cidade:* ${p.cidade}`);
@@ -182,6 +183,26 @@
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
     carregarProximoCodigo();
+
+    // Carrega dados da empresa (nome, fone e whatsapp)
+    if (client && client.getConfig) {
+      client.getConfig().then((cfg) => {
+        if (!cfg) return;
+        if (cfg.nome_empresa) {
+          const elNome = $('empresa-nome');
+          if (elNome) elNome.textContent = cfg.nome_empresa;
+          document.title = cfg.nome_empresa + ' - Pedido';
+        }
+        if (cfg.telefone_empresa) {
+          const elFone = $('empresa-fone');
+          if (elFone) elFone.textContent = cfg.telefone_empresa;
+        }
+        if (cfg.whatsapp_empresa) {
+          whatsapp = cfg.whatsapp_empresa;
+        }
+      }).catch(() => {});
+    }
+
     try {
       if (!client) throw new Error('Cliente Supabase não carregado');
       catalogo = await client.getCatalogo();
