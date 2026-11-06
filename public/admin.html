@@ -4,7 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#d9141e">
   <title>EISBERG - Administração</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -43,6 +47,13 @@
   <div id="modal-root"></div>
   <script src="js/supabase-client.js"></script>
   <script src="js/admin.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(console.error);
+      });
+    }
+  </script>
 </body>
 </html>
 
