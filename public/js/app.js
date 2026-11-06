@@ -37,11 +37,19 @@
     const semPreco = !(p.preco > 0);
     const input = el('input', { type: 'number', inputmode: 'numeric', min: '0', max: '9999', value: '0', 'aria-label': 'Quantidade de ' + p.nome });
     const row = el('div', { class: 'item' + (semPreco ? ' unavailable' : '') });
+
+    const info = el('div', { class: 'item-info' },
+      el('span', { class: 'item-name' }, p.nome),
+      semPreco
+        ? el('span', { class: 'tag-off' }, 'sem preço')
+        : el('span', { class: 'price' }, brl(p.preco))
+    );
+
     if (semPreco) {
       input.disabled = true;
       row.setAttribute('title', 'Indisponível: sem preço');
       row.append(
-        el('span', { class: 'item-name' }, p.nome, el('span', { class: 'tag-off' }, 'sem preço')),
+        info,
         el('div', { class: 'qty' },
           el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '−'),
           input,
@@ -52,7 +60,7 @@
     input.addEventListener('input', () => setQty(p.id, input.value, input, row));
     input.addEventListener('focus', () => input.select());
     row.append(
-      el('span', { class: 'item-name' }, p.nome, el('span', { class: 'price' }, ' ' + brl(p.preco))),
+      info,
       el('div', { class: 'qty' },
         el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => change(-1) }, '−'),
         input,
