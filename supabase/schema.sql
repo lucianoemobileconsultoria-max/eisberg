@@ -88,9 +88,15 @@ returns boolean
 language sql stable security definer
 set search_path = public
 as $$
-  select exists (
-    select 1 from public.admins a
-     where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  select (
+    auth.role() = 'authenticated'
+    and (
+      not exists (select 1 from public.admins)
+      or exists (
+        select 1 from public.admins a
+         where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      )
+    )
   );
 $$;
 
