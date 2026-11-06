@@ -1,0 +1,14 @@
+{
+  "name": "eisberg-pedidos",
+  "version": "1.0.0",
+  "description": "EISBERG - App de pedidos com painel administrativo (CRUD) conectado ao Supabase",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

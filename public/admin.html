@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>EISBERG - Administração</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Login -->
+  <div class="login-wrap" id="login">
+    <form class="login-box" id="login-form">
+      <h1 class="brand-logo" style="text-align:center"><img src="img/logo.png" alt="EISBERG"></h1>
+      <h2 style="text-align:center;margin:0 0 16px">Administração</h2>
+      <div class="form-group"><label for="email">E-mail</label><input type="email" id="email" autocomplete="email" placeholder="seu@email.com" required></div>
+      <div class="form-group"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
+      <p class="error-msg" id="login-error" hidden></p>
+      <button class="btn" style="width:100%">Entrar</button>
+      <p style="text-align:center"><a href="index.html" style="color:#999;font-size:13px">← Voltar ao app de pedidos</a></p>
+    </form>
+  </div>
+
+  <!-- Painel -->
+  <div id="panel" hidden>
+    <header class="admin-bar">
+      <div class="brand">
+        <h1 class="brand-name" style="color:#fff;font-size:30px">EISBERG</h1><span class="sub">Administração</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a class="btn sm" href="index.html" target="_blank">Ver app</a>
+        <button class="btn sm" id="logout">Sair</button>
+      </div>
+    </header>
+    <nav class="tabs" id="tabs">
+      <button data-tab="pedidos" class="active">Pedidos</button>
+      <button data-tab="produtos">Produtos</button>
+      <button data-tab="categorias">Categorias</button>
+    </nav>
+    <main class="admin-main" id="main"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
+
