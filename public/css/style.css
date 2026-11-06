@@ -88,6 +88,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .field:focus-within { border-color: var(--red); box-shadow: 0 0 0 2px rgba(217, 20, 30, .15); }
 .field.invalid { border-color: var(--red); }
+.field.readonly-field { background: #f4f4f4; border-color: #aaa; }
+.field.readonly-field input { color: #444; font-weight: 700; cursor: default; }
 .row { display: flex; gap: 10px; }
 .row .field:nth-child(1) { flex: 1 1 52%; }
 .row .field:nth-child(2) { flex: 0 0 22%; min-width: 70px; }

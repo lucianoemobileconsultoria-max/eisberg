@@ -148,9 +148,20 @@
     }
   }
 
+  async function carregarProximoCodigo() {
+    if (!client) return;
+    try {
+      const n = await client.getProximoCodigo();
+      $('cod').value = n;
+    } catch (_) {
+      $('cod').value = '1';
+    }
+  }
+
   function novoPedido() {
     $('form').reset();
     $('data').value = hoje();
+    carregarProximoCodigo();
     qty.clear();
     render();
     updateSummary();
@@ -162,6 +173,7 @@
     $('data').value = hoje();
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
+    carregarProximoCodigo();
     try {
       if (!client) throw new Error('Cliente Supabase não carregado');
       catalogo = await client.getCatalogo();

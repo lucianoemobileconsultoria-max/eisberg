@@ -82,6 +82,15 @@
     };
 
     // --- Catálogo (público) ---
+    async function getProximoCodigo() {
+      try {
+        var res = await req('/rest/v1/rpc/proximo_codigo', { method: 'POST' });
+        return res != null ? String(res) : '1';
+      } catch (_) {
+        return '1';
+      }
+    }
+
     async function getCatalogo() {
       var cats = await req('/rest/v1/categorias?select=*&order=coluna.asc,ordem.asc,id.asc');
       var prods = await req('/rest/v1/produtos?select=*&order=ordem.asc,id.asc');
@@ -268,6 +277,7 @@
       setToken: setToken,
       getToken: getToken,
       auth: auth,
+      getProximoCodigo: getProximoCodigo,
       getCatalogo: getCatalogo,
       criarPedido: criarPedido,
       adminListarPedidos: adminListarPedidos,

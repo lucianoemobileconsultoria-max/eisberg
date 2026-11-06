@@ -273,7 +273,7 @@
       cliente: el('input', { value: p.cliente, maxlength: '120', required: '' }),
       endereco: el('input', { value: p.endereco, maxlength: '200' }),
       cidade: el('input', { value: p.cidade, maxlength: '80' }),
-      cod: el('input', { value: p.cod, maxlength: '30' }),
+      cod: el('input', { value: p.cod || (id ? String(id) : 'Automático'), readonly: '', style: 'background:#f4f4f4;color:#555;font-weight:700;cursor:default;' }),
       data: el('input', { value: p.data || new Date().toLocaleDateString('pt-BR'), maxlength: '20' }),
       status: el('select', {}, Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: k === p.status }, v))),
       observacoes: el('textarea', { rows: '4', maxlength: '2000' }),

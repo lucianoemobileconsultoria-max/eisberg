@@ -137,11 +137,13 @@ begin
     values (v_cliente,
             left(trim(coalesce(p_dados ->> 'endereco', '')), 200),
             left(trim(coalesce(p_dados ->> 'cidade', '')), 80),
-            left(trim(coalesce(p_dados ->> 'cod', '')), 30),
+            '',
             left(trim(coalesce(p_dados ->> 'data', '')), 20),
             left(trim(coalesce(p_dados ->> 'observacoes', '')), 2000),
             v_status)
     returning id into v_id;
+
+    update public.pedidos set cod = v_id::text where id = v_id;
   else
     update public.pedidos
        set cliente     = v_cliente,
@@ -210,6 +212,14 @@ $$;
 -- 3) Funções públicas (RPC)
 -- ---------------------------------------------------------------------
 -- App do cliente: ENVIAR PEDIDO
+create or replace function public.proximo_codigo()
+returns bigint
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce(max(id), 0) + 1 from public.pedidos;
+$$;
+
 create or replace function public.criar_pedido(p_dados jsonb)
 returns jsonb
 language plpgsql security definer
@@ -329,12 +339,14 @@ revoke execute on function public._gravar_pedido(bigint, jsonb, boolean)  from p
 revoke execute on function public._checar_exclusao(text)                  from public, anon, authenticated;
 
 -- Funções públicas
+revoke execute on function public.proximo_codigo()                 from public;
 revoke execute on function public.criar_pedido(jsonb)              from public;
 revoke execute on function public.admin_salvar_pedido(bigint, jsonb) from public;
 revoke execute on function public.excluir_pedido(bigint, text)     from public;
 revoke execute on function public.excluir_produto(bigint, text)    from public;
 revoke execute on function public.excluir_categoria(bigint, text)  from public;
 grant  execute on function public.is_admin()                       to anon, authenticated;
+grant  execute on function public.proximo_codigo()                 to anon, authenticated;
 grant  execute on function public.criar_pedido(jsonb)              to anon, authenticated;
 grant  execute on function public.admin_salvar_pedido(bigint, jsonb) to authenticated;
 grant  execute on function public.excluir_pedido(bigint, text)     to authenticated;
