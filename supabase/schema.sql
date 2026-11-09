@@ -1,6 +1,11 @@
 -- =====================================================================
 -- EISBERG - Banco de dados (Supabase / PostgreSQL)
 --
+-- ATUALIZAÇÃO RECENTE: suporte a quantidade fracionada 0.5 (1/2):
+--   alter table public.pedido_itens alter column quantidade type numeric(10,2);
+--   alter table public.pedido_itens drop constraint if exists pedido_itens_quantidade_check;
+--   alter table public.pedido_itens add constraint pedido_itens_quantidade_check check (quantidade > 0 and quantidade <= 9999);
+--
 -- COMO USAR: Supabase > SQL Editor > New query > cole TODO este arquivo > Run.
 -- É seguro rodar mais de uma vez (não duplica tabelas nem o cardápio).
 --
@@ -57,9 +62,13 @@ create table if not exists public.pedido_itens (
   categoria  text          not null,
   produto    text          not null,
   unidade    text          not null default '',
-  quantidade integer       not null check (quantidade between 1 and 9999),
+  quantidade numeric(10,2) not null check (quantidade > 0 and quantidade <= 9999),
   preco      numeric(10,2) not null default 0
 );
+-- Migração caso a coluna já tenha sido criada como integer anteriormente:
+alter table public.pedido_itens alter column quantidade type numeric(10,2);
+alter table public.pedido_itens drop constraint if exists pedido_itens_quantidade_check;
+alter table public.pedido_itens add constraint pedido_itens_quantidade_check check (quantidade > 0 and quantidade <= 9999);
 create index if not exists pedido_itens_pedido_idx on public.pedido_itens (pedido_id);
 
 -- E-mails com permissão de administrador (precisam existir em Authentication > Users).
@@ -134,7 +143,7 @@ declare
   v_status   text   := coalesce(p_dados ->> 'status', 'novo');
   v_item     jsonb;
   v_prod     record;
-  v_qtd      integer;
+  v_qtd      numeric(10,2);
   v_n        integer := 0;
 begin
   if v_cliente = '' then
@@ -182,7 +191,7 @@ begin
   end if;
 
   for v_item in select * from jsonb_array_elements(p_dados -> 'itens') loop
-    v_qtd := trunc(coalesce(nullif(v_item ->> 'quantidade', '')::numeric, 0));
+    v_qtd := round(coalesce(nullif(v_item ->> 'quantidade', '')::numeric, 0), 2);
     continue when v_qtd <= 0;
     if v_qtd > 9999 then
       raise exception 'Quantidade inválida';

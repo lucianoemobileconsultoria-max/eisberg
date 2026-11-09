@@ -26,24 +26,94 @@
     return e;
   }
 
-  function setQty(id, value, input, row) {
-    const v = Math.max(0, Math.min(9999, Math.trunc(Number(value)) || 0));
-    if (v) qty.set(id, v); else qty.delete(id);
-    input.value = v;
+  function parseQty(value) {
+    if (typeof value === 'number') {
+      if (value <= 0) return 0;
+      if (Math.abs(value - 0.5) < 0.01) return 0.5;
+      return Math.min(9999, Math.trunc(value));
+    }
+    const s = String(value || '').trim().toLowerCase().replace(',', '.');
+    if (!s || s === '0') return 0;
+    if (s === '1/2' || s === '½' || s === '0.5' || s === '.5' || s === '0.50') return 0.5;
+    const n = parseFloat(s);
+    if (isNaN(n) || n <= 0) return 0;
+    if (Math.abs(n - 0.5) < 0.01) return 0.5;
+    return Math.min(9999, Math.trunc(n));
+  }
+
+  function fmtQty(v) {
+    if (v === 0.5) return '1/2';
+    return String(v || 0);
+  }
+
+  function setQty(id, value, input, row, priceEl, p) {
+    const v = parseQty(value);
+    if (v > 0) {
+      qty.set(id, v);
+    } else {
+      qty.delete(id);
+    }
+    input.value = fmtQty(v);
     row.classList.toggle('has-qty', v > 0);
+
+    if (priceEl && p && p.preco > 0) {
+      if (v === 0.5) {
+        const metade = p.preco * 0.5;
+        priceEl.innerHTML = `<span style="font-size:10px;text-decoration:line-through;opacity:.6;margin-right:2px">${brl(p.preco)}</span>${brl(metade)} <small style="font-size:9px;background:#ffe5e7;color:var(--red);padding:1px 3px;border-radius:3px;font-weight:700">½</small>`;
+      } else if (v > 1) {
+        priceEl.textContent = brl(p.preco * v);
+      } else {
+        priceEl.textContent = brl(p.preco);
+      }
+    }
+
     updateSummary();
+  }
+
+  function changeQty(p, delta, input, row, priceEl) {
+    const cur = qty.get(p.id) || 0;
+    let next = 0;
+    if (delta > 0) {
+      if (cur === 0) {
+        next = 0.5; // Antes do 1, tem a opção 1/2!
+      } else if (cur === 0.5) {
+        next = 1;
+      } else {
+        next = Math.min(9999, Math.trunc(cur) + 1);
+      }
+    } else {
+      if (cur > 1) {
+        next = Math.trunc(cur) - 1;
+      } else if (cur === 1) {
+        next = 0.5; // Antes do 0, passa pela opção 1/2!
+      } else if (cur === 0.5) {
+        next = 0;
+      } else {
+        next = 0;
+      }
+    }
+    setQty(p.id, next, input, row, priceEl, p);
   }
 
   function renderItem(p) {
     const semPreco = !(p.preco > 0);
-    const input = el('input', { type: 'number', inputmode: 'numeric', min: '0', max: '9999', value: '0', 'aria-label': 'Quantidade de ' + p.nome });
+    const priceEl = el('span', { class: 'price' }, semPreco ? '' : brl(p.preco));
+    const input = el('input', {
+      type: 'text',
+      inputmode: 'decimal',
+      maxlength: '5',
+      autocomplete: 'off',
+      list: 'qty-options',
+      value: '0',
+      'aria-label': 'Quantidade de ' + p.nome,
+    });
     const row = el('div', { class: 'item' + (semPreco ? ' unavailable' : '') });
 
     const info = el('div', { class: 'item-info' },
       el('span', { class: 'item-name' }, p.nome),
       semPreco
         ? el('span', { class: 'tag-off' }, 'sem preço')
-        : el('span', { class: 'price' }, brl(p.preco))
+        : priceEl
     );
 
     if (semPreco) {
@@ -57,15 +127,34 @@
           el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '+')));
       return row;
     }
-    const change = (delta) => setQty(p.id, (qty.get(p.id) || 0) + delta, input, row);
-    input.addEventListener('input', () => setQty(p.id, input.value, input, row));
+
+    input.addEventListener('change', () => setQty(p.id, input.value, input, row, priceEl, p));
+    input.addEventListener('input', () => {
+      const v = parseQty(input.value);
+      if (v > 0) qty.set(p.id, v); else qty.delete(p.id);
+      row.classList.toggle('has-qty', v > 0);
+      if (v === 0.5) {
+        const metade = p.preco * 0.5;
+        priceEl.innerHTML = `<span style="font-size:10px;text-decoration:line-through;opacity:.6;margin-right:2px">${brl(p.preco)}</span>${brl(metade)} <small style="font-size:9px;background:#ffe5e7;color:var(--red);padding:1px 3px;border-radius:3px;font-weight:700">½</small>`;
+      } else if (v > 1) {
+        priceEl.textContent = brl(p.preco * v);
+      } else {
+        priceEl.textContent = brl(p.preco);
+      }
+      updateSummary();
+    });
+    input.addEventListener('blur', () => {
+      const cur = qty.get(p.id) || 0;
+      input.value = fmtQty(cur);
+    });
     input.addEventListener('focus', () => input.select());
+
     row.append(
       info,
       el('div', { class: 'qty' },
-        el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => change(-1) }, '−'),
+        el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => changeQty(p, -1, input, row, priceEl) }, '−'),
         input,
-        el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => change(1) }, '+'))
+        el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => changeQty(p, 1, input, row, priceEl) }, '+'))
     );
     return row;
   }
@@ -89,10 +178,25 @@
   }
 
   function updateSummary() {
-    let total = 0;
+    let totalItens = 0;
     let valor = 0;
-    qty.forEach((v, id) => { total += v; valor += v * (preco.get(id) || 0); });
-    $('summary').textContent = total ? `${qty.size} produto(s) • ${total} un./cx.` : '';
+    qty.forEach((v, id) => {
+      totalItens += v;
+      valor += v * (preco.get(id) || 0);
+    });
+
+    let totalStr = '';
+    if (totalItens > 0) {
+      if (totalItens === 0.5) {
+        totalStr = '½';
+      } else if (totalItens % 1 === 0.5) {
+        totalStr = `${Math.floor(totalItens)} ½`;
+      } else {
+        totalStr = String(totalItens);
+      }
+    }
+
+    $('summary').textContent = totalItens ? `${qty.size} produto(s) • ${totalStr} un./cx.` : '';
     $('total').textContent = brl(valor);
   }
 
@@ -132,7 +236,15 @@
         cat = it.categoria;
         linhas.push('', `*${cat}*`);
       }
-      linhas.push(`• ${it.produto}: ${it.quantidade}${it.unidade ? ' ' + it.unidade : ''}${it.preco > 0 ? ' x ' + brl(it.preco) : ''}`);
+      const isMetade = (Number(it.quantidade) === 0.5);
+      const qtdFormatada = isMetade ? '1/2' : String(it.quantidade);
+      const valorItem = Number(it.quantidade) * (it.preco > 0 ? it.preco : 0);
+
+      if (isMetade) {
+        linhas.push(`• ${it.produto}: 1/2 ${it.unidade || 'UND'} (Metade: ${brl(valorItem)})`);
+      } else {
+        linhas.push(`• ${it.produto}: ${qtdFormatada}${it.unidade ? ' ' + it.unidade : ''}${it.preco > 0 ? ' x ' + brl(it.preco) + (it.quantidade > 1 ? ' = ' + brl(valorItem) : '') : ''}`);
+      }
     }
     if (p.total > 0) linhas.push('', `*Total: ${brl(p.total)}*`);
     if (p.observacoes) linhas.push('', `*Observações:* ${p.observacoes}`);

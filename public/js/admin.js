@@ -301,7 +301,16 @@
       el('div', { class: 'table-wrap' }, el('table', { class: 'items-list' },
         el('tbody', {}, porCat.map((g) => [
           el('tr', { class: 'group-row' }, el('td', { colspan: '3' }, g.nome)),
-          g.itens.map((it) => el('tr', {}, el('td', {}, it.produto), el('td', { style: 'text-align:right;white-space:nowrap' }, `${it.quantidade} ${it.unidade}`), el('td', { style: 'text-align:right;white-space:nowrap' }, it.preco > 0 ? `${brl(it.preco)} = ${brl(it.preco * it.quantidade)}` : ''))),
+          g.itens.map((it) => {
+            const isMetade = (Number(it.quantidade) === 0.5);
+            const qtdTxt = isMetade ? '1/2' : String(it.quantidade);
+            const subtotal = Number(it.quantidade) * (it.preco > 0 ? it.preco : 0);
+            return el('tr', {},
+              el('td', {}, it.produto + (isMetade ? ' (½ valor)' : '')),
+              el('td', { style: 'text-align:right;white-space:nowrap' }, `${qtdTxt} ${it.unidade}`),
+              el('td', { style: 'text-align:right;white-space:nowrap' }, it.preco > 0 ? `${brl(it.preco)}${Number(it.quantidade) !== 1 ? ' = ' + brl(subtotal) : ''}` : '')
+            );
+          }),
         ])))),
       p.total > 0 ? el('p', { style: 'text-align:right;font-size:18px' }, el('b', {}, 'Total: ' + brl(p.total))) : null,
       p.observacoes ? el('p', {}, el('b', {}, 'Observações: '), p.observacoes) : null,
@@ -335,16 +344,28 @@
     const totalEl = el('b', { id: 'pedido-total' }, brl(0));
     const precos = new Map();
 
+    const parseAdminQty = (val) => {
+      const s = String(val || '').trim().toLowerCase().replace(',', '.');
+      if (s === '1/2' || s === '½' || s === '0.5' || s === '.5') return 0.5;
+      const n = parseFloat(s);
+      return (isNaN(n) || n <= 0) ? 0 : (Math.abs(n - 0.5) < 0.01 ? 0.5 : Math.min(9999, Math.trunc(n)));
+    };
+
     const recalcular = () => {
       let t = 0;
-      inputs.forEach((i, pid) => { t += (Math.max(0, Math.trunc(Number(i.value)) || 0)) * (precos.get(pid) || 0); });
+      inputs.forEach((i, pid) => { t += parseAdminQty(i.value) * (precos.get(pid) || 0); });
       totalEl.textContent = brl(t);
     };
 
     const lista = catalogo.map((c) => el('div', { class: 'edit-cat' },
       el('h4', {}, `${c.nome} ${c.unidade ? '(' + c.unidade + ')' : ''}${c.ativo ? '' : ' - inativa'}`),
       c.produtos.map((pr) => {
-        const inp = el('input', { type: 'number', min: '0', max: '9999', value: String(qtd.get(pr.id) || 0), style: 'width:70px;padding:4px;border:1px solid #bbb;border-radius:6px' });
+        const qVal = qtd.get(pr.id);
+        const inp = el('input', {
+          type: 'text',
+          value: (Number(qVal) === 0.5) ? '1/2' : String(qVal || 0),
+          style: 'width:70px;padding:4px;border:1px solid #bbb;border-radius:6px;text-align:center;font-weight:700'
+        });
         inp.addEventListener('input', recalcular);
         inputs.set(pr.id, inp);
         precos.set(pr.id, pr.preco);
@@ -356,7 +377,7 @@
       const body = {
         cliente: f.cliente.value, endereco: f.endereco.value, cidade: f.cidade.value, cod: f.cod.value,
         data: f.data.value, observacoes: f.observacoes.value, status: f.status.value,
-        itens: [...inputs].map(([produto_id, i]) => ({ produto_id, quantidade: Number(i.value) || 0 })),
+        itens: [...inputs].map(([produto_id, i]) => ({ produto_id, quantidade: parseAdminQty(i.value) })).filter(x => x.quantidade > 0),
       };
       await client.adminSalvarPedido(id || null, body);
       toast('Pedido salvo');
