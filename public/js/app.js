@@ -54,6 +54,7 @@
       qty.delete(id);
     }
     input.value = fmtQty(v);
+    input.scrollLeft = 0;
     row.classList.toggle('has-qty', v > 0);
     if (btnHalf) {
       btnHalf.classList.toggle('active', v === 0.5);
@@ -177,6 +178,7 @@
     input.addEventListener('blur', () => {
       const cur = qty.get(p.id) || 0;
       input.value = fmtQty(cur);
+      input.scrollLeft = 0;
       btnHalf.classList.toggle('active', cur === 0.5);
     });
     input.addEventListener('focus', () => input.select());
