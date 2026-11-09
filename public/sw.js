@@ -2,7 +2,7 @@
 /**
  * EISBERG Service Worker - PWA Offline & Cache
  */
-const CACHE_NAME = 'eisberg-cache-v1';
+const CACHE_NAME = 'eisberg-cache-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -11,7 +11,7 @@ const STATIC_ASSETS = [
   './js/supabase-client.js',
   './js/app.js',
   './js/admin.js',
-  './img/logo.png',
+  './img/mascote.svg',
   './img/icon-192.png',
   './img/icon-512.png',
   './manifest.webmanifest'
@@ -49,7 +49,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Arquivos estáticos do app usam Stale-While-Revalidate
+  // Scripts, estilos e páginas HTML usam Network First para garantir atualizações imediatas
+  if (req.mode === 'navigate' || url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Demais arquivos estáticos (ícones, imagens) usam Stale-While-Revalidate
   event.respondWith(
     caches.match(req).then((cached) => {
       const networked = fetch(req).then((res) => {

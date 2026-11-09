@@ -46,7 +46,7 @@
     return String(v || 0);
   }
 
-  function setQty(id, value, input, row, priceEl, p) {
+  function setQty(id, value, input, row, priceEl, p, btnHalf) {
     const v = parseQty(value);
     if (v > 0) {
       qty.set(id, v);
@@ -55,6 +55,9 @@
     }
     input.value = fmtQty(v);
     row.classList.toggle('has-qty', v > 0);
+    if (btnHalf) {
+      btnHalf.classList.toggle('active', v === 0.5);
+    }
 
     if (priceEl && p && p.preco > 0) {
       if (v === 0.5) {
@@ -70,7 +73,7 @@
     updateSummary();
   }
 
-  function changeQty(p, delta, input, row, priceEl) {
+  function changeQty(p, delta, input, row, priceEl, btnHalf) {
     const cur = qty.get(p.id) || 0;
     let next = 0;
     if (delta > 0) {
@@ -88,16 +91,26 @@
         next = 0.5; // Antes do 0, passa pela opção 1/2!
       } else if (cur === 0.5) {
         next = 0;
+      } else if (cur === 0) {
+        // Se estiver em 0 e clicar em diminuir / abaixo, também vai para 1/2!
+        next = 0.5;
       } else {
         next = 0;
       }
     }
-    setQty(p.id, next, input, row, priceEl, p);
+    setQty(p.id, next, input, row, priceEl, p, btnHalf);
   }
 
   function renderItem(p) {
     const semPreco = !(p.preco > 0);
     const priceEl = el('span', { class: 'price' }, semPreco ? '' : brl(p.preco));
+    const btnHalf = el('button', {
+      type: 'button',
+      class: 'btn-half',
+      title: 'Opção 1/2 (Metade do valor)',
+      'aria-label': 'Meia unidade de ' + p.nome,
+    }, '½');
+
     const input = el('input', {
       type: 'text',
       inputmode: 'decimal',
@@ -118,21 +131,30 @@
 
     if (semPreco) {
       input.disabled = true;
+      btnHalf.disabled = true;
       row.setAttribute('title', 'Indisponível: sem preço');
       row.append(
         info,
         el('div', { class: 'qty' },
+          btnHalf,
           el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '−'),
           input,
           el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '+')));
       return row;
     }
 
-    input.addEventListener('change', () => setQty(p.id, input.value, input, row, priceEl, p));
+    btnHalf.addEventListener('click', () => {
+      const cur = qty.get(p.id) || 0;
+      const next = (cur === 0.5) ? 0 : 0.5;
+      setQty(p.id, next, input, row, priceEl, p, btnHalf);
+    });
+
+    input.addEventListener('change', () => setQty(p.id, input.value, input, row, priceEl, p, btnHalf));
     input.addEventListener('input', () => {
       const v = parseQty(input.value);
       if (v > 0) qty.set(p.id, v); else qty.delete(p.id);
       row.classList.toggle('has-qty', v > 0);
+      btnHalf.classList.toggle('active', v === 0.5);
       if (v === 0.5) {
         const metade = p.preco * 0.5;
         priceEl.innerHTML = `<span style="font-size:10px;text-decoration:line-through;opacity:.6;margin-right:2px">${brl(p.preco)}</span>${brl(metade)} <small style="font-size:9px;background:#ffe5e7;color:var(--red);padding:1px 3px;border-radius:3px;font-weight:700">½</small>`;
@@ -143,18 +165,29 @@
       }
       updateSummary();
     });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        changeQty(p, 1, input, row, priceEl, btnHalf);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        changeQty(p, -1, input, row, priceEl, btnHalf);
+      }
+    });
     input.addEventListener('blur', () => {
       const cur = qty.get(p.id) || 0;
       input.value = fmtQty(cur);
+      btnHalf.classList.toggle('active', cur === 0.5);
     });
     input.addEventListener('focus', () => input.select());
 
     row.append(
       info,
       el('div', { class: 'qty' },
-        el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => changeQty(p, -1, input, row, priceEl) }, '−'),
+        btnHalf,
+        el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => changeQty(p, -1, input, row, priceEl, btnHalf) }, '−'),
         input,
-        el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => changeQty(p, 1, input, row, priceEl) }, '+'))
+        el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => changeQty(p, 1, input, row, priceEl, btnHalf) }, '+'))
     );
     return row;
   }
@@ -496,7 +529,7 @@
         localStorage.removeItem('eisberg_user_token');
         localStorage.removeItem('eisberg_user_email');
         if (client) {
-          try { await client.auth.signOut(); } catch (_) {}
+          try { await client.auth.signOut(); } catch (_) { }
         }
         $('app-main').hidden = true;
         $('app-login').hidden = false;
@@ -563,7 +596,7 @@
         if (cfg.whatsapp_empresa) {
           whatsapp = cfg.whatsapp_empresa;
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
   init();
