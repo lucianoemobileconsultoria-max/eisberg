@@ -18,6 +18,30 @@
     anonKey: 'sb_publishable_ayOLQ43DrKTulXIljw6YqQ_Dt_ZUeel',
     whatsapp: '5551981777079',
   };
+  const COMPANY_CONFIG_STORAGE_KEY = 'eisberg_company_config';
+
+  function readCachedCompanyConfig() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(COMPANY_CONFIG_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && (parsed.telefone_empresa || parsed.whatsapp_empresa)) {
+            return parsed;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function writeCachedCompanyConfig(cfg) {
+    try {
+      if (typeof localStorage !== 'undefined' && cfg && typeof cfg === 'object') {
+        localStorage.setItem(COMPANY_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+      }
+    } catch (_) {}
+  }
 
   function createClient(options) {
     const opts = Object.assign({}, DEFAULT_CONFIG, options || {});
@@ -27,12 +51,12 @@
     function setToken(t) { token = t || null; }
     function getToken() { return token; }
 
-    function headers(extra) {
+    function headers(extra, noAuth) {
       const h = {
         'Content-Type': 'application/json',
         apikey: opts.anonKey,
       };
-      if (token) {
+      if (!noAuth && token) {
         h.Authorization = 'Bearer ' + token;
       } else {
         h.Authorization = 'Bearer ' + opts.anonKey;
@@ -41,8 +65,11 @@
     }
 
     async function req(path, init) {
-      init = init || {};
-      init.headers = headers(init.headers);
+      init = Object.assign({}, init || {});
+      var noAuth = !!init.noAuth;
+      delete init.noAuth;
+      if (init.cache === undefined) init.cache = 'no-store';
+      init.headers = headers(init.headers, noAuth);
       const res = await fetch(base + path, init);
       const ct = res.headers.get('content-type') || '';
       const data = ct.includes('json') ? await res.json().catch(function () { return null; }) : null;
@@ -63,7 +90,18 @@
       signInWithPassword: async function (email, password) {
         var data = await req('/auth/v1/token?grant_type=password', {
           method: 'POST',
+          noAuth: true,
           body: JSON.stringify({ email: email, password: password }),
+        });
+        setToken(data.access_token);
+        return data;
+      },
+      refreshSession: async function (refreshToken) {
+        if (!refreshToken) throw new Error('Refresh token ausente');
+        var data = await req('/auth/v1/token?grant_type=refresh_token', {
+          method: 'POST',
+          noAuth: true,
+          body: JSON.stringify({ refresh_token: refreshToken }),
         });
         setToken(data.access_token);
         return data;
@@ -84,12 +122,29 @@
     // --- Configurações da Empresa (público / admin) ---
     async function getConfig() {
       try {
-        var res = await req('/rest/v1/rpc/obter_config', { method: 'POST' });
-        if (res) {
+        // Chamada pública via anonKey para nunca falhar caso o JWT de usuário tenha expirado
+        var res = await req('/rest/v1/rpc/obter_config', {
+          method: 'POST',
+          noAuth: true,
+          cache: 'no-store',
+          body: '{}',
+        });
+        if (Array.isArray(res)) res = res[0];
+        if (res && typeof res === 'object') {
           if (res.whatsapp_empresa) opts.whatsapp = res.whatsapp_empresa;
+          writeCachedCompanyConfig(res);
           return res;
         }
-      } catch (_) {}
+      } catch (err) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('Falha ao buscar configurações da empresa:', err && err.message ? err.message : err);
+        }
+      }
+      var cached = readCachedCompanyConfig();
+      if (cached) {
+        if (cached.whatsapp_empresa) opts.whatsapp = cached.whatsapp_empresa;
+        return cached;
+      }
       return {
         nome_empresa: 'EISBERG',
         telefone_empresa: '(51) 98177.7079',
@@ -100,9 +155,14 @@
     async function salvarConfig(nome, telefone, whatsapp) {
       var res = await req('/rest/v1/rpc/salvar_config', {
         method: 'POST',
+        cache: 'no-store',
         body: JSON.stringify({ p_nome: nome, p_telefone: telefone, p_whatsapp: whatsapp }),
       });
-      if (res && res.whatsapp_empresa) opts.whatsapp = res.whatsapp_empresa;
+      if (Array.isArray(res)) res = res[0];
+      if (res && typeof res === 'object') {
+        if (res.whatsapp_empresa) opts.whatsapp = res.whatsapp_empresa;
+        writeCachedCompanyConfig(res);
+      }
       return res;
     }
 
@@ -303,6 +363,7 @@
       getToken: getToken,
       auth: auth,
       getConfig: getConfig,
+      getCachedConfig: readCachedCompanyConfig,
       salvarConfig: salvarConfig,
       getProximoCodigo: getProximoCodigo,
       getCatalogo: getCatalogo,

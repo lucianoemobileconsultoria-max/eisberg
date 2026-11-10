@@ -2,7 +2,7 @@
 /**
  * EISBERG Service Worker - PWA Offline & Cache
  */
-const CACHE_NAME = 'eisberg-cache-v6';
+const CACHE_NAME = 'eisberg-cache-v7';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -41,11 +41,8 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Requisições para APIs externas (Supabase) usam Network First
-  if (url.origin !== self.location.origin) {
-    event.respondWith(
-      fetch(req).catch(() => caches.match(req))
-    );
+  // Nunca intercepta requisições de escrita (POST/PATCH/DELETE) nem chamadas externas (Supabase)
+  if (req.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
@@ -60,7 +57,7 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(() => caches.match(req).then((r) => r || caches.match(req, { ignoreSearch: true })))
     );
     return;
   }

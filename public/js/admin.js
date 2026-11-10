@@ -114,7 +114,21 @@
     return !!(client && client.getToken());
   }
 
+  async function atualizarMarcaAdmin() {
+    if (!client || !client.getConfig) return;
+    try {
+      const cfg = await client.getConfig();
+      if (cfg && cfg.nome_empresa) {
+        const adminName = $('admin-brand-name');
+        if (adminName) adminName.textContent = cfg.nome_empresa;
+        const loginName = $('login-brand-name');
+        if (loginName) loginName.textContent = cfg.nome_empresa;
+      }
+    } catch (_) {}
+  }
+
   async function mostrar() {
+    atualizarMarcaAdmin();
     let logado = estaLogado();
     if (logado) {
       try {
@@ -591,13 +605,38 @@
       btnSalvar.textContent = 'Salvando...';
       try {
         const res = await client.salvarConfig(inpNome.value, inpFone.value, inpWa.value);
+        if (res && typeof res === 'object') {
+          if (res.nome_empresa) {
+            inpNome.value = res.nome_empresa;
+            previewNome.textContent = res.nome_empresa;
+            const adminName = $('admin-brand-name');
+            if (adminName) adminName.textContent = res.nome_empresa;
+            const loginName = $('login-brand-name');
+            if (loginName) loginName.textContent = res.nome_empresa;
+          }
+          if (res.telefone_empresa) {
+            inpFone.value = res.telefone_empresa;
+            previewFone.textContent = res.telefone_empresa;
+          }
+          if (res.whatsapp_empresa) {
+            inpWa.value = res.whatsapp_empresa;
+          }
+          if (typeof BroadcastChannel !== 'undefined') {
+            try {
+              const bc = new BroadcastChannel('eisberg_config');
+              bc.postMessage(res);
+              bc.close();
+            } catch (_) {}
+          }
+        }
         toast('Configurações salvas com sucesso!');
-        const adminName = $('admin-brand-name');
-        if (adminName && res.nome_empresa) adminName.textContent = res.nome_empresa;
-        btnSalvar.disabled = false;
-        btnSalvar.textContent = '💾 Salvar Configurações';
       } catch (err) {
-        toast(err.message || 'Erro ao salvar configurações', true);
+        if (err && (err.status === 401 || /jwt/i.test(err.message || ''))) {
+          sair(true);
+        } else {
+          toast((err && err.message) || 'Erro ao salvar configurações', true);
+        }
+      } finally {
         btnSalvar.disabled = false;
         btnSalvar.textContent = '💾 Salvar Configurações';
       }

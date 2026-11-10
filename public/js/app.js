@@ -345,6 +345,9 @@
     try {
       if (!client) throw new Error('Cliente Supabase não inicializado');
 
+      const sessaoOk = await garantirSessaoAtiva(true);
+      if (!sessaoOk) return;
+
       // Exibe modal com barra de progresso
       updateProgress(15, 'Validando informações do pedido...');
       if (sendingOverlay) sendingOverlay.hidden = false;
@@ -367,7 +370,7 @@
       await sleep(250);
       updateProgress(90, 'Gerando comprovante e link do WhatsApp...');
 
-      const j = await pedidoPromise;
+      const [j] = await Promise.all([pedidoPromise, atualizarConfigEmpresa(true)]);
 
       updateProgress(100, 'Pedido enviado com sucesso!');
       await sleep(400);
@@ -399,6 +402,7 @@
     $('form').reset();
     $('data').value = hoje();
     carregarProximoCodigo();
+    atualizarConfigEmpresa(true);
     qty.clear();
     gpsCoords = null;
     const btnGps = $('btn-gps');
@@ -409,21 +413,123 @@
     }
     render();
     updateSummary();
-    ['f-cliente', 'f-endereco', 'f-cidade'].forEach((id) => {
-      const f = $(id);
+    ['f-cliente', 'f-endereco', 'cidade'].forEach((id) => {
+      const f = $(id.startsWith('f-') ? id : 'f-' + id);
       if (f) f.classList.remove('invalid', 'field-shake');
     });
     $('done').hidden = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function carregarCatalogo() {
+  let ultimaAtualizacaoConfig = 0;
+
+  function aplicarConfigEmpresa(cfg) {
+    if (!cfg || typeof cfg !== 'object') return;
+    if (cfg.nome_empresa) {
+      const elNome = $('empresa-nome');
+      if (elNome) elNome.textContent = cfg.nome_empresa;
+      const elLoginNome = $('login-empresa-nome');
+      if (elLoginNome) elLoginNome.textContent = cfg.nome_empresa;
+      document.title = cfg.nome_empresa + ' - Pedido';
+    }
+    if (cfg.telefone_empresa) {
+      const elFone = $('empresa-fone');
+      if (elFone) elFone.textContent = cfg.telefone_empresa;
+    }
+    if (cfg.whatsapp_empresa) {
+      whatsapp = cfg.whatsapp_empresa;
+    }
+  }
+
+  async function atualizarConfigEmpresa(forcar) {
+    if (!client || !client.getConfig) return;
+    const agora = Date.now();
+    if (!forcar && (agora - ultimaAtualizacaoConfig) < 1500) return;
+    ultimaAtualizacaoConfig = agora;
+    try {
+      const cfg = await client.getConfig();
+      aplicarConfigEmpresa(cfg);
+    } catch (_) { }
+  }
+
+  function parseJwtExp(jwt) {
+    try {
+      const parts = String(jwt || '').split('.');
+      if (parts.length !== 3) return 0;
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      const payload = JSON.parse(atob(padded));
+      return Number(payload.exp) || 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function isTokenExpiringSoon(jwt) {
+    const exp = parseJwtExp(jwt);
+    if (!exp) return true;
+    return (Date.now() / 1000) >= (exp - 60);
+  }
+
+  function limparSessaoLocal() {
+    localStorage.removeItem('eisberg_user_token');
+    localStorage.removeItem('eisberg_user_refresh_token');
+    localStorage.removeItem('eisberg_user_email');
+    if (client) client.setToken(null);
+  }
+
+  async function garantirSessaoAtiva(mostrarErroLogin) {
+    const token = localStorage.getItem('eisberg_user_token');
+    const refreshToken = localStorage.getItem('eisberg_user_refresh_token');
+    if (!token) return false;
+
+    if (!isTokenExpiringSoon(token)) {
+      if (client) client.setToken(token);
+      return true;
+    }
+
+    if (refreshToken && client && client.auth && client.auth.refreshSession) {
+      try {
+        const res = await client.auth.refreshSession(refreshToken);
+        if (res && res.access_token) {
+          localStorage.setItem('eisberg_user_token', res.access_token);
+          if (res.refresh_token) localStorage.setItem('eisberg_user_refresh_token', res.refresh_token);
+          if (res.user && res.user.email) localStorage.setItem('eisberg_user_email', res.user.email);
+          client.setToken(res.access_token);
+          return true;
+        }
+      } catch (_) { }
+    }
+
+    limparSessaoLocal();
+    $('app-main').hidden = true;
+    $('app-login').hidden = false;
+    if (mostrarErroLogin) {
+      const err = $('app-login-error');
+      if (err) {
+        err.textContent = 'Sua sessão expirou. Entre novamente com seu login e senha.';
+        err.hidden = false;
+      }
+    }
+    return false;
+  }
+
+  async function carregarCatalogo(jaTentouRenovar) {
     try {
       if (!client) throw new Error('Cliente Supabase não carregado');
       catalogo = await client.getCatalogo();
+      preco.clear();
       catalogo.forEach((c) => c.produtos.forEach((p) => preco.set(p.id, p.preco)));
       render();
     } catch (e) {
+      const ehAuth = e && (e.status === 401 || /jwt/i.test(e.message || ''));
+      if (ehAuth && !jaTentouRenovar) {
+        // Força tentativa de refresh ou encerramento limpo de sessão expirada
+        localStorage.removeItem('eisberg_user_token');
+        const ok = await garantirSessaoAtiva(true);
+        if (ok) return carregarCatalogo(true);
+        return;
+      }
       console.error(e);
       $('catalog').replaceChildren(
         el('div', { class: 'error-msg', style: 'padding: 18px 8px; line-height: 1.5;' },
@@ -438,19 +544,21 @@
     }
   }
 
-  function verificarSessao() {
+  async function verificarSessao() {
     const token = localStorage.getItem('eisberg_user_token');
     const email = localStorage.getItem('eisberg_user_email') || '';
     if (token) {
-      if (client) client.setToken(token);
+      const ativa = await garantirSessaoAtiva(true);
+      if (!ativa) return false;
+      const emailAtual = localStorage.getItem('eisberg_user_email') || email;
       $('app-login').hidden = true;
       $('app-main').hidden = false;
       const bEmail = $('user-badge-email');
-      if (bEmail) bEmail.textContent = email;
-      if (!$('cliente').value.trim() && email) {
-        $('cliente').value = email.split('@')[0];
+      if (bEmail) bEmail.textContent = emailAtual;
+      if (!$('cliente').value.trim() && emailAtual) {
+        $('cliente').value = emailAtual.split('@')[0];
       }
-      carregarCatalogo();
+      carregarCatalogo(false);
       return true;
     } else {
       $('app-main').hidden = true;
@@ -460,8 +568,11 @@
   }
 
   async function init() {
-    // Configura autenticação do App de Pedidos
-    verificarSessao();
+    // Aplica última configuração conhecida imediatamente antes de buscar a mais recente no banco
+    if (client && client.getCachedConfig) {
+      aplicarConfigEmpresa(client.getCachedConfig());
+    }
+    atualizarConfigEmpresa(true);
 
     $('app-login-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -500,6 +611,9 @@
 
         const emailFinal = (res.user && res.user.email) || loginRaw;
         localStorage.setItem('eisberg_user_token', res.access_token);
+        if (res.refresh_token) {
+          localStorage.setItem('eisberg_user_refresh_token', res.refresh_token);
+        }
         localStorage.setItem('eisberg_user_email', emailFinal);
 
         client.setToken(res.access_token);
@@ -513,7 +627,9 @@
           $('cliente').value = emailFinal.split('@')[0];
         }
 
-        carregarCatalogo();
+        atualizarConfigEmpresa(true);
+        carregarProximoCodigo();
+        carregarCatalogo(false);
       } catch (e) {
         err.textContent = e.message === 'Invalid login credentials'
           ? 'Login ou senha incorretos no sistema.'
@@ -528,8 +644,7 @@
     const btnLogout = $('btn-app-logout');
     if (btnLogout) {
       btnLogout.addEventListener('click', async () => {
-        localStorage.removeItem('eisberg_user_token');
-        localStorage.removeItem('eisberg_user_email');
+        limparSessaoLocal();
         if (client) {
           try { await client.auth.signOut(); } catch (_) { }
         }
@@ -542,7 +657,6 @@
     $('data').value = hoje();
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
-    carregarProximoCodigo();
 
     const btnGps = $('btn-gps');
     if (btnGps) {
@@ -582,24 +696,32 @@
       }
     });
 
-    // Carrega dados da empresa (nome, fone e whatsapp)
-    if (client && client.getConfig) {
-      client.getConfig().then((cfg) => {
-        if (!cfg) return;
-        if (cfg.nome_empresa) {
-          const elNome = $('empresa-nome');
-          if (elNome) elNome.textContent = cfg.nome_empresa;
-          document.title = cfg.nome_empresa + ' - Pedido';
-        }
-        if (cfg.telefone_empresa) {
-          const elFone = $('empresa-fone');
-          if (elFone) elFone.textContent = cfg.telefone_empresa;
-        }
-        if (cfg.whatsapp_empresa) {
-          whatsapp = cfg.whatsapp_empresa;
-        }
-      }).catch(() => { });
+    // Sincronização em tempo real com alterações do Painel Admin
+    window.addEventListener('focus', () => atualizarConfigEmpresa(false));
+    window.addEventListener('pageshow', () => atualizarConfigEmpresa(true));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') atualizarConfigEmpresa(false);
+    });
+    window.addEventListener('storage', (ev) => {
+      if (ev.key === 'eisberg_company_config' && ev.newValue) {
+        try { aplicarConfigEmpresa(JSON.parse(ev.newValue)); } catch (_) { }
+      }
+    });
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('eisberg_config');
+        bc.addEventListener('message', (ev) => {
+          if (ev.data) aplicarConfigEmpresa(ev.data);
+        });
+      } catch (_) { }
     }
+    setInterval(() => {
+      if (document.visibilityState === 'visible') atualizarConfigEmpresa(false);
+    }, 30000);
+
+    // Configura autenticação do App de Pedidos e carrega catálogo/código
+    await verificarSessao();
+    carregarProximoCodigo();
   }
   init();
 })();
