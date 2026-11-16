@@ -322,6 +322,7 @@
                 el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
                 el('td', { class: 'actions' },
                   el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
+                  el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
                   el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
                   el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir')))))))
         : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum pedido encontrado.')));
@@ -349,6 +350,341 @@
     });
   }
 
+  function gerarHtmlCupom(p, cfg) {
+    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const nomeEmpresa = (cfg && cfg.nome_empresa) ? cfg.nome_empresa : 'EISBERG';
+    const foneEmpresa = (cfg && cfg.telefone_empresa) ? cfg.telefone_empresa : '(51) 989634089';
+    const statusTxt = (STATUS[p.status] || p.status || 'Novo').toUpperCase();
+
+    // Data e hora
+    let dataTxt = p.data || '';
+    let horaTxt = '';
+    if (p.criado_em) {
+      try {
+        const d = new Date(p.criado_em);
+        if (!dataTxt) dataTxt = d.toLocaleDateString('pt-BR');
+        horaTxt = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      } catch (_) {}
+    }
+    if (!dataTxt) dataTxt = new Date().toLocaleDateString('pt-BR');
+    if (!horaTxt) horaTxt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    // Filtrar apenas itens com quantidade > 0
+    const itens = (p.itens || p.pedido_itens || []).filter((it) => Number(it.quantidade) > 0);
+
+    let totalQtd = 0;
+    let totalValor = 0;
+    const itensHtml = itens.map((it, idx) => {
+      const isMetade = (Number(it.quantidade) === 0.5);
+      const qtdNum = Number(it.quantidade) || 0;
+      totalQtd += qtdNum;
+      const qtdTxt = isMetade ? '1/2' : String(it.quantidade);
+      const precoUnit = Number(it.preco) || 0;
+      const subtotal = qtdNum * precoUnit;
+      totalValor += subtotal;
+
+      const desc = escapeHtml(it.produto || 'Item') + (isMetade ? ' (½)' : '');
+      const showCat = it.categoria && (it.categoria.trim().toLowerCase() !== (it.produto || '').trim().toLowerCase());
+      const cat = showCat ? `<div class="sub-cat">${escapeHtml(it.categoria)}</div>` : '';
+      const un = escapeHtml(it.unidade || 'UND');
+      const unitTxt = precoUnit > 0 ? brl(precoUnit) : '—';
+      const totTxt = precoUnit > 0 ? brl(subtotal) : '—';
+
+      return `
+        <tr>
+          <td class="col-item">${idx + 1}</td>
+          <td class="col-qtd bold">${qtdTxt}</td>
+          <td class="col-un">${un}</td>
+          <td class="col-desc bold">${desc}${cat}</td>
+          <td class="col-unit right">${unitTxt}</td>
+          <td class="col-tot right bold">${totTxt}</td>
+        </tr>`;
+    }).join('');
+
+    if (p.total > 0) totalValor = p.total;
+
+    const totalQtdTxt = (totalQtd % 1 === 0.5)
+      ? (Math.floor(totalQtd) > 0 ? `${Math.floor(totalQtd)} e ½` : '1/2')
+      : String(totalQtd);
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cupom Pedido #${p.id} - ${escapeHtml(nomeEmpresa)}</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 4mm 2mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+      font-size: 11.5px;
+      line-height: 1.25;
+      color: #000;
+      background: #fff;
+      padding: 6px;
+      width: 100%;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: bold; }
+    .empresa-nome {
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 2px;
+    }
+    .empresa-sub {
+      font-size: 10px;
+      text-align: center;
+      color: #222;
+      margin-bottom: 2px;
+    }
+    .empresa-contato {
+      font-size: 11px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .linha-traco {
+      border-top: 1px dashed #000;
+      margin: 6px 0;
+    }
+    .linha-dupla {
+      border-top: 2px dashed #000;
+      margin: 6px 0;
+    }
+    .doc-titulo {
+      font-size: 12px;
+      font-weight: 900;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+    .doc-sub {
+      font-size: 9px;
+      text-align: center;
+      color: #333;
+    }
+    .linha-info {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+    .secao-titulo {
+      font-size: 11px;
+      font-weight: 900;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }
+    .tabela-itens {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10.5px;
+      margin: 4px 0;
+    }
+    .tabela-itens th {
+      border-bottom: 1px dashed #000;
+      padding: 3px 1px;
+      font-size: 9.5px;
+      font-weight: bold;
+      text-align: left;
+    }
+    .tabela-itens td {
+      padding: 3px 1px;
+      vertical-align: top;
+    }
+    .col-item { width: 6%; font-size: 9px; }
+    .col-qtd { width: 14%; text-align: center; }
+    .col-un { width: 14%; text-align: center; font-size: 9.5px; }
+    .col-desc { width: 40%; word-break: break-word; }
+    .sub-cat { font-size: 8.5px; color: #444; font-weight: normal; }
+    .col-unit { width: 12%; font-size: 9px; white-space: nowrap; }
+    .col-tot { width: 14%; white-space: nowrap; }
+    .linha-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+    .linha-total-destaque {
+      display: flex;
+      justify-content: space-between;
+      font-size: 15px;
+      font-weight: 900;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px solid #000;
+    }
+    .obs-bloco {
+      font-size: 10.5px;
+      line-height: 1.3;
+      padding: 2px 0;
+    }
+    .canhoto {
+      font-size: 10px;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .rodape {
+      text-align: center;
+      font-size: 10.5px;
+      font-weight: bold;
+      margin-top: 6px;
+    }
+    @media print {
+      body {
+        width: 100%;
+        max-width: none;
+        padding: 0;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="empresa-nome">${escapeHtml(nomeEmpresa)}</div>
+  <div class="empresa-sub">Sorvetes, Picolés e Congelados</div>
+  <div class="empresa-contato">Tel/WhatsApp: ${escapeHtml(foneEmpresa)}</div>
+  
+  <div class="linha-dupla"></div>
+  <div class="doc-titulo">COMPROVANTE DE PEDIDO</div>
+  <div class="doc-sub">DOCUMENTO NÃO FISCAL</div>
+  <div class="linha-traco"></div>
+
+  <div class="linha-info">
+    <span><b>PEDIDO:</b> #${p.id}</span>
+    <span><b>CÓD:</b> ${escapeHtml(p.cod || p.id)}</span>
+  </div>
+  <div class="linha-info">
+    <span><b>DATA:</b> ${escapeHtml(dataTxt)}</span>
+    <span><b>HORA:</b> ${escapeHtml(horaTxt)}</span>
+  </div>
+  <div class="linha-info">
+    <span><b>STATUS:</b> ${escapeHtml(statusTxt)}</span>
+  </div>
+
+  <div class="linha-traco"></div>
+  <div class="secao-titulo">DADOS DO CLIENTE</div>
+  <div style="margin-bottom:2px"><b>CLIENTE:</b> ${escapeHtml(p.cliente || '—')}</div>
+  <div style="margin-bottom:2px"><b>ENDEREÇO:</b> ${escapeHtml(p.endereco || '—')}</div>
+  <div><b>CIDADE:</b> ${escapeHtml(p.cidade || '—')}</div>
+
+  <div class="linha-traco"></div>
+  <div class="secao-titulo">ITENS DO PEDIDO</div>
+  <table class="tabela-itens">
+    <thead>
+      <tr>
+        <th class="col-item">#</th>
+        <th class="col-qtd">QTD</th>
+        <th class="col-un">UN</th>
+        <th class="col-desc">DESCRIÇÃO</th>
+        <th class="col-unit right">UNIT</th>
+        <th class="col-tot right">TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itensHtml || '<tr><td colspan="6" class="center">Nenhum item</td></tr>'}
+    </tbody>
+  </table>
+
+  <div class="linha-traco"></div>
+  <div class="linha-total">
+    <span>QTD TOTAL DE ITENS:</span>
+    <span class="bold">${totalQtdTxt} (${itens.length} prod.)</span>
+  </div>
+  <div class="linha-total-destaque">
+    <span>TOTAL DO PEDIDO:</span>
+    <span>${brl(totalValor)}</span>
+  </div>
+
+  ${p.observacoes ? `
+    <div class="linha-traco"></div>
+    <div class="secao-titulo">OBSERVAÇÕES</div>
+    <div class="obs-bloco">${escapeHtml(p.observacoes)}</div>
+  ` : ''}
+
+  <div class="linha-traco"></div>
+  <div class="canhoto">
+    <div>RECEBIDO EM: _____/_____/_________</div>
+    <div style="margin-top:12px">ASSINATURA: ____________________________________</div>
+  </div>
+
+  <div class="linha-dupla"></div>
+  <div class="rodape">Obrigado pela preferência!</div>
+</body>
+</html>`;
+  }
+
+  async function imprimirCupom(pedidoOuId) {
+    let p = pedidoOuId;
+    if (typeof p === 'number' || typeof p === 'string' || !p.itens || !p.itens.length || !p.itens[0].produto) {
+      const pid = (typeof p === 'object' && p.id) ? p.id : p;
+      p = await client.adminGetPedido(pid);
+    }
+    let cfg = {};
+    try {
+      cfg = await client.getConfig();
+    } catch (_) {}
+
+    const html = gerarHtmlCupom(p, cfg);
+
+    let iframe = document.getElementById('cupom-print-frame');
+    if (iframe) {
+      try { iframe.remove(); } catch (_) {}
+    }
+    iframe = document.createElement('iframe');
+    iframe.id = 'cupom-print-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const doPrint = () => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) {
+        console.warn('Iframe print falhou, tentando janela direta:', e);
+        const w = window.open('', '_blank');
+        if (w) {
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+          w.print();
+        }
+      }
+      setTimeout(() => {
+        try { if (iframe && iframe.parentNode) iframe.remove(); } catch (_) {}
+      }, 3500);
+    };
+
+    if (iframe.contentWindow.document.readyState === 'complete') {
+      setTimeout(doPrint, 150);
+    } else {
+      iframe.onload = () => setTimeout(doPrint, 150);
+    }
+  }
+
   async function verPedido(id) {
     const p = await client.adminGetPedido(id);
     const info = (l, v) => (v ? el('div', {}, el('b', {}, l + ': '), v) : null);
@@ -367,7 +703,7 @@
           href: `https://maps.google.com/?q=${encodeURIComponent(enderecoBusca)}`,
           target: '_blank',
           rel: 'noopener noreferrer',
-          class: 'btn sm secondary',
+          class: 'btn sm secondary no-print',
           style: 'display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:13px'
         }, '📍 Abrir no Google Maps (PIN / Traçar Rota)')
       : null;
@@ -396,7 +732,7 @@
       p.observacoes ? el('p', {}, el('b', {}, 'Observações: '), p.observacoes) : null,
       el('div', { class: 'actions no-print' },
         el('label', { style: 'display:flex;align-items:center;gap:6px;font-weight:700' }, 'Status:', sel),
-        el('button', { class: 'btn secondary', onclick: () => window.print() }, '🖨 Imprimir'),
+        el('button', { class: 'btn', onclick: () => guard(() => imprimirCupom(p)) }, '🖨 Imprimir Cupom'),
         el('button', { class: 'btn secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
         el('button', { class: 'btn danger', onclick: () => excluirPedido(p) }, 'Excluir'))));
   }
@@ -472,8 +808,9 @@
         group('Cidade', f.cidade), group('Cód.', f.cod), group('Data', f.data), group('Status', f.status)),
       el('h3', {}, 'Itens'), lista,
       group('Observações', f.observacoes),
-      el('div', { class: 'actions order-actions' },
+      el('div', { class: 'actions order-actions no-print' },
         el('button', { class: 'btn', onclick: salvar }, 'Salvar'),
+        id ? el('button', { class: 'btn secondary', onclick: () => guard(() => imprimirCupom(id)) }, '🖨 Imprimir Cupom') : null,
         el('button', { class: 'btn secondary', onclick: closeModal }, 'Cancelar'),
         el('div', { class: 'total-box' }, el('span', {}, 'Total'), totalEl))), true);
   }

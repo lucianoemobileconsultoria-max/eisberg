@@ -14,6 +14,7 @@
   const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const preco = new Map(); // produto_id -> preço
   let gpsCoords = null; // { lat, lng } capturado pelo botão GPS
+  let ultimoPedidoCriado = null; // Último pedido enviado para impressão de cupom
 
   function el(tag, props = {}, ...children) {
     const e = document.createElement(tag);
@@ -310,6 +311,231 @@
     return linhas.join('\n');
   }
 
+  function gerarHtmlCupomCliente(p) {
+    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const nomeEmpresa = ($('empresa-nome') && $('empresa-nome').textContent.trim()) || 'EISBERG';
+    const foneEmpresa = ($('empresa-fone') && $('empresa-fone').textContent.trim()) || '(51) 989634089';
+
+    // Data e hora
+    let dataTxt = p.data || hoje();
+    let horaTxt = '';
+    if (p.criado_em) {
+      try {
+        const d = new Date(p.criado_em);
+        horaTxt = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      } catch (_) {}
+    }
+    if (!horaTxt) horaTxt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const itens = (p.itens || []).filter((it) => Number(it.quantidade) > 0);
+
+    let totalQtd = 0;
+    let totalValor = 0;
+    const itensHtml = itens.map((it, idx) => {
+      const isMetade = (Number(it.quantidade) === 0.5);
+      const qtdNum = Number(it.quantidade) || 0;
+      totalQtd += qtdNum;
+      const qtdTxt = isMetade ? '1/2' : String(it.quantidade);
+      const precoUnit = Number(it.preco) || 0;
+      const subtotal = qtdNum * precoUnit;
+      totalValor += subtotal;
+
+      const desc = escapeHtml(it.produto || 'Item') + (isMetade ? ' (½)' : '');
+      const un = escapeHtml(it.unidade || 'UND');
+      const unitTxt = precoUnit > 0 ? brl(precoUnit) : '—';
+      const totTxt = precoUnit > 0 ? brl(subtotal) : '—';
+
+      return `
+        <tr>
+          <td class="col-item">${idx + 1}</td>
+          <td class="col-qtd bold">${qtdTxt}</td>
+          <td class="col-un">${un}</td>
+          <td class="col-desc bold">${desc}</td>
+          <td class="col-unit right">${unitTxt}</td>
+          <td class="col-tot right bold">${totTxt}</td>
+        </tr>`;
+    }).join('');
+
+    if (p.total > 0) totalValor = p.total;
+
+    const totalQtdTxt = (totalQtd % 1 === 0.5)
+      ? (Math.floor(totalQtd) > 0 ? `${Math.floor(totalQtd)} e ½` : '1/2')
+      : String(totalQtd);
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cupom Pedido #${p.id} - ${escapeHtml(nomeEmpresa)}</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm 2mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+      font-size: 11.5px;
+      line-height: 1.25;
+      color: #000;
+      background: #fff;
+      padding: 6px;
+      width: 100%;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: bold; }
+    .empresa-nome {
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 2px;
+    }
+    .empresa-sub { font-size: 10px; text-align: center; color: #222; margin-bottom: 2px; }
+    .empresa-contato { font-size: 11px; font-weight: bold; text-align: center; }
+    .linha-traco { border-top: 1px dashed #000; margin: 6px 0; }
+    .linha-dupla { border-top: 2px dashed #000; margin: 6px 0; }
+    .doc-titulo { font-size: 12px; font-weight: 900; text-align: center; letter-spacing: 0.5px; }
+    .doc-sub { font-size: 9px; text-align: center; color: #333; }
+    .linha-info { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; margin-bottom: 2px; }
+    .secao-titulo { font-size: 11px; font-weight: 900; margin-bottom: 3px; text-transform: uppercase; }
+    .tabela-itens { width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 4px 0; }
+    .tabela-itens th { border-bottom: 1px dashed #000; padding: 3px 1px; font-size: 9.5px; font-weight: bold; text-align: left; }
+    .tabela-itens td { padding: 3px 1px; vertical-align: top; }
+    .col-item { width: 6%; font-size: 9px; }
+    .col-qtd { width: 14%; text-align: center; }
+    .col-un { width: 14%; text-align: center; font-size: 9.5px; }
+    .col-desc { width: 40%; word-break: break-word; }
+    .col-unit { width: 12%; font-size: 9px; white-space: nowrap; }
+    .col-tot { width: 14%; white-space: nowrap; }
+    .linha-total { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; }
+    .linha-total-destaque { display: flex; justify-content: space-between; font-size: 15px; font-weight: 900; margin-top: 4px; padding-top: 4px; border-top: 1px solid #000; }
+    .obs-bloco { font-size: 10.5px; line-height: 1.3; padding: 2px 0; }
+    .canhoto { font-size: 10px; margin-top: 8px; line-height: 1.5; }
+    .rodape { text-align: center; font-size: 10.5px; font-weight: bold; margin-top: 6px; }
+    @media print { body { width: 100%; max-width: none; padding: 0; margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="empresa-nome">${escapeHtml(nomeEmpresa)}</div>
+  <div class="empresa-sub">Sorvetes, Picolés e Congelados</div>
+  <div class="empresa-contato">Tel/WhatsApp: ${escapeHtml(foneEmpresa)}</div>
+  
+  <div class="linha-dupla"></div>
+  <div class="doc-titulo">COMPROVANTE DE PEDIDO</div>
+  <div class="doc-sub">DOCUMENTO NÃO FISCAL</div>
+  <div class="linha-traco"></div>
+
+  <div class="linha-info">
+    <span><b>PEDIDO:</b> #${p.id}</span>
+    <span><b>CÓD:</b> ${escapeHtml(p.cod || p.id)}</span>
+  </div>
+  <div class="linha-info">
+    <span><b>DATA:</b> ${escapeHtml(dataTxt)}</span>
+    <span><b>HORA:</b> ${escapeHtml(horaTxt)}</span>
+  </div>
+
+  <div class="linha-traco"></div>
+  <div class="secao-titulo">DADOS DO CLIENTE</div>
+  <div style="margin-bottom:2px"><b>CLIENTE:</b> ${escapeHtml(p.cliente || '—')}</div>
+  <div style="margin-bottom:2px"><b>ENDEREÇO:</b> ${escapeHtml(p.endereco || '—')}</div>
+  <div><b>CIDADE:</b> ${escapeHtml(p.cidade || '—')}</div>
+
+  <div class="linha-traco"></div>
+  <div class="secao-titulo">ITENS DO PEDIDO</div>
+  <table class="tabela-itens">
+    <thead>
+      <tr>
+        <th class="col-item">#</th>
+        <th class="col-qtd">QTD</th>
+        <th class="col-un">UN</th>
+        <th class="col-desc">DESCRIÇÃO</th>
+        <th class="col-unit right">UNIT</th>
+        <th class="col-tot right">TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itensHtml || '<tr><td colspan="6" class="center">Nenhum item</td></tr>'}
+    </tbody>
+  </table>
+
+  <div class="linha-traco"></div>
+  <div class="linha-total">
+    <span>QTD TOTAL DE ITENS:</span>
+    <span class="bold">${totalQtdTxt} (${itens.length} prod.)</span>
+  </div>
+  <div class="linha-total-destaque">
+    <span>TOTAL DO PEDIDO:</span>
+    <span>${brl(totalValor)}</span>
+  </div>
+
+  ${p.observacoes ? `
+    <div class="linha-traco"></div>
+    <div class="secao-titulo">OBSERVAÇÕES</div>
+    <div class="obs-bloco">${escapeHtml(p.observacoes)}</div>
+  ` : ''}
+
+  <div class="linha-traco"></div>
+  <div class="canhoto">
+    <div>RECEBIDO EM: _____/_____/_________</div>
+    <div style="margin-top:12px">ASSINATURA: ____________________________________</div>
+  </div>
+
+  <div class="linha-dupla"></div>
+  <div class="rodape">Obrigado pela preferência!</div>
+</body>
+</html>`;
+  }
+
+  function imprimirCupomCliente(p) {
+    if (!p) return;
+    const html = gerarHtmlCupomCliente(p);
+    let iframe = document.getElementById('cupom-client-print-frame');
+    if (iframe) {
+      try { iframe.remove(); } catch (_) {}
+    }
+    iframe = document.createElement('iframe');
+    iframe.id = 'cupom-client-print-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const doPrint = () => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) {
+        const w = window.open('', '_blank');
+        if (w) {
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+          w.print();
+        }
+      }
+      setTimeout(() => {
+        try { if (iframe && iframe.parentNode) iframe.remove(); } catch (_) {}
+      }, 3500);
+    };
+
+    if (iframe.contentWindow.document.readyState === 'complete') {
+      setTimeout(doPrint, 150);
+    } else {
+      iframe.onload = () => setTimeout(doPrint, 150);
+    }
+  }
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   function updateProgress(pct, statusText) {
@@ -402,6 +628,7 @@
       if (sendingOverlay) sendingOverlay.hidden = true;
       $('done-id').textContent = '#' + j.id;
       const pedidoComGps = Object.assign({ gps: gpsCoords }, j);
+      ultimoPedidoCriado = pedidoComGps;
       $('done-wa').href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensagemWhatsApp(pedidoComGps))}`;
       $('done').hidden = false;
     } catch (e) {
@@ -429,6 +656,7 @@
     atualizarConfigEmpresa(true);
     qty.clear();
     gpsCoords = null;
+    ultimoPedidoCriado = null;
     const btnGps = $('btn-gps');
     if (btnGps) {
       btnGps.textContent = '📍 Usar GPS';
@@ -726,6 +954,15 @@
     $('data').value = hoje();
     $('form').addEventListener('submit', enviar);
     $('done-new').addEventListener('click', novoPedido);
+
+    const btnDonePrint = $('done-print');
+    if (btnDonePrint) {
+      btnDonePrint.addEventListener('click', () => {
+        if (ultimoPedidoCriado) {
+          imprimirCupomCliente(ultimoPedidoCriado);
+        }
+      });
+    }
 
     const btnGps = $('btn-gps');
     if (btnGps) {

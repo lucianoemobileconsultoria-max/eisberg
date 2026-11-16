@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="EISBERG">
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 
 <body>
@@ -174,17 +174,18 @@
       <p>Pedido <b id="done-id"></b> registrado com sucesso. Para agilizar, envie também pelo WhatsApp.</p>
       <div class="actions">
         <a class="btn green" id="done-wa" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+        <button type="button" class="btn secondary" id="done-print">🖨 Imprimir cupom</button>
         <button type="button" class="btn secondary" id="done-new">Novo pedido</button>
       </div>
     </div>
   </div>
 
-  <script src="js/supabase-client.js?v=11"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="js/supabase-client.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=11').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=12').then((reg) => {
           reg.update();
         }).catch(console.error);
       });
