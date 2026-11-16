@@ -437,12 +437,57 @@
     }
     render();
     updateSummary();
-    ['f-cliente', 'f-endereco', 'cidade'].forEach((id) => {
-      const f = $(id.startsWith('f-') ? id : 'f-' + id);
+    ['f-cliente', 'f-endereco', 'f-cidade'].forEach((id) => {
+      const f = $(id);
       if (f) f.classList.remove('invalid', 'field-shake');
     });
     $('done').hidden = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function buscarEnderecoPorGps(lat, lng) {
+    // 1ª tentativa: Nominatim OpenStreetMap (mais detalhado: rua, número, bairro e cidade)
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=pt-BR`;
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(5000) : undefined
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const a = data.address || {};
+        const rua = a.road || a.pedestrian || a.street || a.avenue || a.square || a.highway || '';
+        const num = a.house_number || '';
+        const bairro = a.suburb || a.neighbourhood || a.city_district || a.quarter || '';
+        const endereco = [rua ? (num ? `${rua}, ${num}` : rua) : '', bairro].filter(Boolean).join(' - ') || (data.display_name ? data.display_name.split(',').slice(0, 3).join(',').trim() : '');
+        const cidade = a.city || a.town || a.municipality || a.village || a.county || '';
+        if (endereco || cidade) {
+          return { endereco, cidade };
+        }
+      }
+    } catch (_) {}
+
+    // 2ª tentativa: BigDataCloud Reverse Geocoding (CORS aberto, retorno garantido da cidade e bairro)
+    try {
+      const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=pt`;
+      const res = await fetch(url, {
+        signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(5000) : undefined
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const cidade = data.locality || data.city || '';
+        let bairro = '';
+        if (data.localityInfo && Array.isArray(data.localityInfo.administrative)) {
+          const itemBairro = data.localityInfo.administrative.find(x => x.adminLevel === 10 || (x.description && x.description.includes('settlement')));
+          if (itemBairro && itemBairro.name) {
+            bairro = itemBairro.name.replace(/\s*\([^)]*\)/, '');
+          }
+        }
+        return { endereco: bairro || '', cidade: cidade || '' };
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   let ultimaAtualizacaoConfig = 0;
@@ -692,8 +737,28 @@
         btnGps.textContent = 'Buscando GPS...';
         btnGps.disabled = true;
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
+          async (pos) => {
             gpsCoords = { lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) };
+            btnGps.textContent = 'Buscando endereço...';
+
+            try {
+              const geo = await buscarEnderecoPorGps(gpsCoords.lat, gpsCoords.lng);
+              if (geo) {
+                if (geo.endereco && $('endereco')) {
+                  $('endereco').value = geo.endereco;
+                  const fEnd = $('f-endereco');
+                  if (fEnd) fEnd.classList.remove('invalid', 'field-shake');
+                }
+                if (geo.cidade && $('cidade')) {
+                  $('cidade').value = geo.cidade;
+                  const fCid = $('f-cidade');
+                  if (fCid) fCid.classList.remove('invalid', 'field-shake');
+                }
+              }
+            } catch (errGeo) {
+              console.warn('Erro ao obter endereço do GPS:', errGeo);
+            }
+
             btnGps.textContent = '📍 GPS ativo ✓';
             btnGps.classList.add('active');
             btnGps.disabled = false;
@@ -702,7 +767,7 @@
             console.warn('GPS indisponível:', err.message);
             btnGps.textContent = '📍 Usar GPS';
             btnGps.disabled = false;
-            alert('Não foi possível obter a localização do GPS. O endereço digitado será usado para gerar o PIN no Google Maps.');
+            alert('Não foi possível obter a localização do GPS. Por favor, digite seu endereço e cidade manualmente.');
           },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
         );
