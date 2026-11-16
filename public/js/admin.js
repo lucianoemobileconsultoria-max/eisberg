@@ -185,7 +185,7 @@
         const loginName = $('login-brand-name');
         if (loginName) loginName.textContent = cfg.nome_empresa;
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   async function mostrar() {
@@ -212,7 +212,7 @@
 
   async function sair(expirou) {
     if (client) {
-      try { await client.auth.signOut(); } catch (_) {}
+      try { await client.auth.signOut(); } catch (_) { }
     }
     sessionStorage.removeItem('eisberg_sb_token');
     mostrar();
@@ -310,21 +310,21 @@
         el('button', { class: 'btn', onclick: () => guard(() => formPedido()) }, '+ Novo pedido')),
       pedidos.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
-            el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
-            el('tbody', {}, pedidos.map((p) =>
-              el('tr', {},
-                el('td', {}, '#' + p.id),
-                el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
-                el('td', {}, p.cidade),
-                el('td', {}, p.data || fmtData(p.criado_em)),
-                el('td', {}, String(p.total_itens)),
-                el('td', {}, p.total > 0 ? brl(p.total) : '—'),
-                el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
-                el('td', { class: 'actions' },
-                  el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
-                  el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
-                  el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
-                  el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir')))))))
+          el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, pedidos.map((p) =>
+            el('tr', {},
+              el('td', {}, '#' + p.id),
+              el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
+              el('td', {}, p.cidade),
+              el('td', {}, p.data || fmtData(p.criado_em)),
+              el('td', {}, String(p.total_itens)),
+              el('td', {}, p.total > 0 ? brl(p.total) : '—'),
+              el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
+              el('td', { class: 'actions' },
+                el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
+                el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
+                el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
+                el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir')))))))
         : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum pedido encontrado.')));
   }
 
@@ -364,7 +364,7 @@
         const d = new Date(p.criado_em);
         if (!dataTxt) dataTxt = d.toLocaleDateString('pt-BR');
         horaTxt = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!dataTxt) dataTxt = new Date().toLocaleDateString('pt-BR');
     if (!horaTxt) horaTxt = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -635,13 +635,13 @@
     let cfg = {};
     try {
       cfg = await client.getConfig();
-    } catch (_) {}
+    } catch (_) { }
 
     const html = gerarHtmlCupom(p, cfg);
 
     let iframe = document.getElementById('cupom-print-frame');
     if (iframe) {
-      try { iframe.remove(); } catch (_) {}
+      try { iframe.remove(); } catch (_) { }
     }
     iframe = document.createElement('iframe');
     iframe.id = 'cupom-print-frame';
@@ -674,7 +674,7 @@
         }
       }
       setTimeout(() => {
-        try { if (iframe && iframe.parentNode) iframe.remove(); } catch (_) {}
+        try { if (iframe && iframe.parentNode) iframe.remove(); } catch (_) { }
       }, 3500);
     };
 
@@ -700,12 +700,12 @@
     const enderecoBusca = [p.endereco, p.cidade].filter(Boolean).join(', ');
     const mapsBtn = enderecoBusca
       ? el('a', {
-          href: `https://maps.google.com/?q=${encodeURIComponent(enderecoBusca)}`,
-          target: '_blank',
-          rel: 'noopener noreferrer',
-          class: 'btn sm secondary no-print',
-          style: 'display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:13px'
-        }, '📍 Abrir no Google Maps (PIN / Traçar Rota)')
+        href: `https://maps.google.com/?q=${encodeURIComponent(enderecoBusca)}`,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        class: 'btn sm secondary no-print',
+        style: 'display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:13px'
+      }, '📍 Abrir no Google Maps (PIN / Traçar Rota)')
       : null;
 
     openModal('Pedido #' + p.id, el('div', {},
@@ -825,17 +825,17 @@
         el('button', { class: 'btn', onclick: () => formCategoria() }, '+ Nova categoria')),
       cats.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
-            el('thead', {}, el('tr', {}, ...['Nome', 'Unidade', 'Coluna', 'Ordem', 'Produtos', 'Ativa', ''].map((h) => el('th', {}, h)))),
-            el('tbody', {}, cats.map((c) => el('tr', {},
-              el('td', {}, el('b', {}, c.nome)),
-              el('td', {}, c.unidade || '—'),
-              el('td', {}, c.coluna === 2 ? 'Direita' : 'Esquerda'),
-              el('td', {}, String(c.ordem)),
-              el('td', {}, String(c.produtos.length)),
-              el('td', {}, el('span', { class: 'badge ' + (c.ativo ? 'on' : 'off') }, c.ativo ? 'Sim' : 'Não')),
-              el('td', { class: 'actions' },
-                el('button', { class: 'btn sm secondary', onclick: () => formCategoria(c) }, 'Editar'),
-                el('button', { class: 'btn sm danger', onclick: () => excluirCategoria(c) }, 'Excluir')))))))
+          el('thead', {}, el('tr', {}, ...['Nome', 'Unidade', 'Coluna', 'Ordem', 'Produtos', 'Ativa', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, cats.map((c) => el('tr', {},
+            el('td', {}, el('b', {}, c.nome)),
+            el('td', {}, c.unidade || '—'),
+            el('td', {}, c.coluna === 2 ? 'Direita' : 'Esquerda'),
+            el('td', {}, String(c.ordem)),
+            el('td', {}, String(c.produtos.length)),
+            el('td', {}, el('span', { class: 'badge ' + (c.ativo ? 'on' : 'off') }, c.ativo ? 'Sim' : 'Não')),
+            el('td', { class: 'actions' },
+              el('button', { class: 'btn sm secondary', onclick: () => formCategoria(c) }, 'Editar'),
+              el('button', { class: 'btn sm danger', onclick: () => excluirCategoria(c) }, 'Excluir')))))))
         : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhuma categoria cadastrada.')));
   }
 
@@ -919,8 +919,8 @@
         el('button', { class: 'btn', onclick: () => formProduto(cats) }, '+ Novo produto')),
       rows.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
-            el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
-            el('tbody', {}, rows)))
+          el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, rows)))
         : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum produto cadastrado.')));
   }
 
@@ -951,7 +951,7 @@
           const set = raw ? new Set(JSON.parse(raw)) : new Set();
           if (!f.permite_meia.checked) set.add(Number(p.id)); else set.delete(Number(p.id));
           localStorage.setItem('eisberg_produtos_sem_meia', JSON.stringify([...set]));
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (p) {
@@ -1010,7 +1010,7 @@
       el('h3', { style: 'margin:0 0 8px;color:var(--red);font-size:22px' }, '⚙️ Configurações da Empresa e WhatsApp'),
       el('p', { style: 'color:var(--muted);font-size:14px;margin-bottom:20px;line-height:1.4' },
         'Ao salvar, o nome da empresa, o telefone exibido no topo e o número de destino para envio dos pedidos no WhatsApp serão atualizados em tempo real em todo o aplicativo.'),
-      
+
       group('Nome da Empresa', inpNome),
       group('Telefone / Celular Exibido no Topo', inpFone),
       group('Número do WhatsApp para Envio dos Pedidos (com DDD)', inpWa),
@@ -1052,7 +1052,7 @@
               const bc = new BroadcastChannel('eisberg_config');
               bc.postMessage(res);
               bc.close();
-            } catch (_) {}
+            } catch (_) { }
           }
         }
         toast('Configurações salvas com sucesso!');

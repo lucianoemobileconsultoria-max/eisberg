@@ -358,9 +358,11 @@ textarea {
   transition: all .15s ease;
   margin-right: 1px;
 }
+
 .btn-half:hover {
   background: #fff0f1 !important;
 }
+
 .btn-half.active {
   background: var(--red) !important;
   color: #fff !important;
