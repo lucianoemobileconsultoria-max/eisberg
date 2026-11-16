@@ -306,18 +306,35 @@
     }
 
     async function adminCriarProduto(p) {
-      var rows = await req('/rest/v1/produtos', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({
-          categoria_id: Number(p.categoria_id),
-          nome: p.nome,
-          preco: Number(p.preco) || 0,
-          ordem: Number(p.ordem) || 0,
-          ativo: p.ativo !== false,
-        }),
-      });
-      return rows && rows[0];
+      var body = {
+        categoria_id: Number(p.categoria_id),
+        nome: p.nome,
+        preco: Number(p.preco) || 0,
+        ordem: Number(p.ordem) || 0,
+        ativo: p.ativo !== false,
+      };
+      if (p.permite_meia !== undefined) body.permite_meia = p.permite_meia !== false;
+      try {
+        var rows = await req('/rest/v1/produtos', {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify(body),
+        });
+        return rows && rows[0];
+      } catch (err) {
+        if (err && err.message && err.message.includes('permite_meia')) {
+          delete body.permite_meia;
+          var fallbackRows = await req('/rest/v1/produtos', {
+            method: 'POST',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify(body),
+          });
+          var colErr = new Error('Produto criado, mas para gravar a opção 1/2 no banco execute no Supabase SQL Editor: ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS permite_meia BOOLEAN NOT NULL DEFAULT TRUE;');
+          colErr.partialSuccess = true;
+          throw colErr;
+        }
+        throw err;
+      }
     }
 
     async function adminAtualizarProduto(id, p) {
@@ -327,12 +344,28 @@
       if (p.preco !== undefined) body.preco = Number(p.preco) || 0;
       if (p.ordem !== undefined) body.ordem = Number(p.ordem) || 0;
       if (p.ativo !== undefined) body.ativo = p.ativo !== false;
-      var rows = await req('/rest/v1/produtos?id=eq.' + id, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify(body),
-      });
-      return rows && rows[0];
+      if (p.permite_meia !== undefined) body.permite_meia = p.permite_meia !== false;
+      try {
+        var rows = await req('/rest/v1/produtos?id=eq.' + id, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify(body),
+        });
+        return rows && rows[0];
+      } catch (err) {
+        if (err && err.message && err.message.includes('permite_meia')) {
+          delete body.permite_meia;
+          var fallbackRows = await req('/rest/v1/produtos?id=eq.' + id, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify(body),
+          });
+          var colErr = new Error('Produto atualizado, mas para gravar a opção 1/2 no banco execute no Supabase SQL Editor: ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS permite_meia BOOLEAN NOT NULL DEFAULT TRUE;');
+          colErr.partialSuccess = true;
+          throw colErr;
+        }
+        throw err;
+      }
     }
 
     // --- Exclusões (exigem senha de exclusão) ---

@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="EISBERG">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 
 <body>
@@ -125,6 +125,14 @@
       <option value="5">5</option>
     </datalist>
 
+    <datalist id="qty-options-inteiro">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+    </datalist>
+
     <div class="footer-admin"><a href="admin.html">Área administrativa</a></div>
   </main>
 
@@ -171,12 +179,12 @@
     </div>
   </div>
 
-  <script src="js/supabase-client.js?v=8"></script>
-  <script src="js/app.js?v=8"></script>
+  <script src="js/supabase-client.js?v=9"></script>
+  <script src="js/app.js?v=9"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=8').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=9').then((reg) => {
           reg.update();
         }).catch(console.error);
       });

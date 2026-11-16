@@ -1,7 +1,11 @@
 -- =====================================================================
 -- EISBERG - Banco de dados (Supabase / PostgreSQL)
 --
--- ATUALIZAÇÃO RECENTE: suporte a quantidade fracionada 0.5 (1/2):
+-- ATUALIZAÇÃO: opção de permitir ou não quantidade 1/2 (meia) por produto:
+--   alter table public.produtos add column if not exists permite_meia boolean not null default true;
+--   update public.produtos set permite_meia = false where lower(nome) like '%gelo%';
+--
+-- ATUALIZAÇÃO ANTERIOR: suporte a quantidade fracionada 0.5 (1/2):
 --   alter table public.pedido_itens alter column quantidade type numeric(10,2);
 --   alter table public.pedido_itens drop constraint if exists pedido_itens_quantidade_check;
 --   alter table public.pedido_itens add constraint pedido_itens_quantidade_check check (quantidade > 0 and quantidade <= 9999);
@@ -36,8 +40,10 @@ create table if not exists public.produtos (
   nome         text          not null check (length(trim(nome)) > 0),
   preco        numeric(10,2) not null default 0 check (preco >= 0),
   ordem        integer       not null default 0,
-  ativo        boolean       not null default true
+  ativo        boolean       not null default true,
+  permite_meia boolean       not null default true
 );
+alter table public.produtos add column if not exists permite_meia boolean not null default true;
 create index if not exists produtos_categoria_idx on public.produtos (categoria_id);
 
 create table if not exists public.pedidos (
@@ -197,7 +203,7 @@ begin
       raise exception 'Quantidade inválida';
     end if;
 
-    select p.id, p.nome, p.preco, p.ativo, c.nome as categoria, c.unidade
+    select p.id, p.nome, p.preco, p.ativo, p.permite_meia, c.nome as categoria, c.unidade
       into v_prod
       from public.produtos p
       join public.categorias c on c.id = p.categoria_id
@@ -207,6 +213,9 @@ begin
     end if;
     if p_cliente_final and (not v_prod.ativo or v_prod.preco <= 0) then
       raise exception '"%" está indisponível (sem preço)', v_prod.nome;
+    end if;
+    if p_cliente_final and v_qtd = 0.5 and not coalesce(v_prod.permite_meia, true) then
+      raise exception '"%" aceita apenas quantidades inteiras (1/2 não permitido)', v_prod.nome;
     end if;
 
     insert into public.pedido_itens (pedido_id, produto_id, categoria, produto, unidade, quantidade, preco)

@@ -26,18 +26,38 @@
     return e;
   }
 
-  function parseQty(value) {
+  function getProdutosSemMeiaCache() {
+    try {
+      const raw = localStorage.getItem('eisberg_produtos_sem_meia');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  function produtoPermiteMeia(p) {
+    if (!p) return true;
+    if (p.permite_meia === false) return false;
+    if (p.permite_meia === true) return true;
+    if (getProdutosSemMeiaCache().has(Number(p.id))) return false;
+    if (p.nome && p.nome.toLowerCase().includes('gelo')) return false;
+    return true;
+  }
+
+  function parseQty(value, permiteMeia = true) {
     if (typeof value === 'number') {
       if (value <= 0) return 0;
-      if (Math.abs(value - 0.5) < 0.01) return 0.5;
+      if (Math.abs(value - 0.5) < 0.01) return permiteMeia ? 0.5 : 0;
       return Math.min(9999, Math.trunc(value));
     }
     const s = String(value || '').trim().toLowerCase().replace(',', '.');
     if (!s || s === '0') return 0;
-    if (s === '1/2' || s === '½' || s === '0.5' || s === '.5' || s === '0.50') return 0.5;
+    if (s === '1/2' || s === '½' || s === '0.5' || s === '.5' || s === '0.50') {
+      return permiteMeia ? 0.5 : 0;
+    }
     const n = parseFloat(s);
     if (isNaN(n) || n <= 0) return 0;
-    if (Math.abs(n - 0.5) < 0.01) return 0.5;
+    if (Math.abs(n - 0.5) < 0.01) return permiteMeia ? 0.5 : 0;
     return Math.min(9999, Math.trunc(n));
   }
 
@@ -47,7 +67,8 @@
   }
 
   function setQty(id, value, input, row, priceEl, p, btnHalf) {
-    const v = parseQty(value);
+    const permiteMeia = produtoPermiteMeia(p);
+    const v = parseQty(value, permiteMeia);
     if (v > 0) {
       qty.set(id, v);
     } else {
@@ -75,11 +96,12 @@
   }
 
   function changeQty(p, delta, input, row, priceEl, btnHalf) {
+    const permiteMeia = produtoPermiteMeia(p);
     const cur = qty.get(p.id) || 0;
     let next = 0;
     if (delta > 0) {
       if (cur === 0) {
-        next = 0.5; // Antes do 1, tem a opção 1/2!
+        next = permiteMeia ? 0.5 : 1;
       } else if (cur === 0.5) {
         next = 1;
       } else {
@@ -89,12 +111,9 @@
       if (cur > 1) {
         next = Math.trunc(cur) - 1;
       } else if (cur === 1) {
-        next = 0.5; // Antes do 0, passa pela opção 1/2!
+        next = permiteMeia ? 0.5 : 0;
       } else if (cur === 0.5) {
         next = 0;
-      } else if (cur === 0) {
-        // Se estiver em 0 e clicar em diminuir / abaixo, também vai para 1/2!
-        next = 0.5;
       } else {
         next = 0;
       }
@@ -104,20 +123,21 @@
 
   function renderItem(p) {
     const semPreco = !(p.preco > 0);
+    const permiteMeia = produtoPermiteMeia(p);
     const priceEl = el('span', { class: 'price' }, semPreco ? '' : brl(p.preco));
-    const btnHalf = el('button', {
+    const btnHalf = permiteMeia ? el('button', {
       type: 'button',
       class: 'btn-half',
       title: 'Opção 1/2 (Metade do valor)',
       'aria-label': 'Meia unidade de ' + p.nome,
-    }, '½');
+    }, '½') : null;
 
     const input = el('input', {
       type: 'text',
       inputmode: 'decimal',
       maxlength: '5',
       autocomplete: 'off',
-      list: 'qty-options',
+      list: permiteMeia ? 'qty-options' : 'qty-options-inteiro',
       value: '0',
       'aria-label': 'Quantidade de ' + p.nome,
     });
@@ -132,30 +152,33 @@
 
     if (semPreco) {
       input.disabled = true;
-      btnHalf.disabled = true;
+      if (btnHalf) btnHalf.disabled = true;
       row.setAttribute('title', 'Indisponível: sem preço');
-      row.append(
-        info,
-        el('div', { class: 'qty' },
-          btnHalf,
-          el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '−'),
-          input,
-          el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '+')));
+      const qtyDiv = el('div', { class: 'qty' });
+      if (btnHalf) qtyDiv.append(btnHalf);
+      qtyDiv.append(
+        el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '−'),
+        input,
+        el('button', { type: 'button', disabled: '', 'aria-label': p.nome + ' indisponível' }, '+')
+      );
+      row.append(info, qtyDiv);
       return row;
     }
 
-    btnHalf.addEventListener('click', () => {
-      const cur = qty.get(p.id) || 0;
-      const next = (cur === 0.5) ? 0 : 0.5;
-      setQty(p.id, next, input, row, priceEl, p, btnHalf);
-    });
+    if (btnHalf) {
+      btnHalf.addEventListener('click', () => {
+        const cur = qty.get(p.id) || 0;
+        const next = (cur === 0.5) ? 0 : 0.5;
+        setQty(p.id, next, input, row, priceEl, p, btnHalf);
+      });
+    }
 
     input.addEventListener('change', () => setQty(p.id, input.value, input, row, priceEl, p, btnHalf));
     input.addEventListener('input', () => {
-      const v = parseQty(input.value);
+      const v = parseQty(input.value, permiteMeia);
       if (v > 0) qty.set(p.id, v); else qty.delete(p.id);
       row.classList.toggle('has-qty', v > 0);
-      btnHalf.classList.toggle('active', v === 0.5);
+      if (btnHalf) btnHalf.classList.toggle('active', v === 0.5);
       if (v === 0.5) {
         const metade = p.preco * 0.5;
         priceEl.innerHTML = `<span style="font-size:10px;text-decoration:line-through;opacity:.6;margin-right:2px">${brl(p.preco)}</span>${brl(metade)} <small style="font-size:9px;background:#ffe5e7;color:var(--red);padding:1px 3px;border-radius:3px;font-weight:700">½</small>`;
@@ -179,18 +202,19 @@
       const cur = qty.get(p.id) || 0;
       input.value = fmtQty(cur);
       input.scrollLeft = 0;
-      btnHalf.classList.toggle('active', cur === 0.5);
+      if (btnHalf) btnHalf.classList.toggle('active', cur === 0.5);
     });
     input.addEventListener('focus', () => input.select());
 
-    row.append(
-      info,
-      el('div', { class: 'qty' },
-        btnHalf,
-        el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => changeQty(p, -1, input, row, priceEl, btnHalf) }, '−'),
-        input,
-        el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => changeQty(p, 1, input, row, priceEl, btnHalf) }, '+'))
+    const qtyDiv = el('div', { class: 'qty' });
+    if (btnHalf) qtyDiv.append(btnHalf);
+    qtyDiv.append(
+      el('button', { type: 'button', 'aria-label': 'Diminuir ' + p.nome, onclick: () => changeQty(p, -1, input, row, priceEl, btnHalf) }, '−'),
+      input,
+      el('button', { type: 'button', 'aria-label': 'Aumentar ' + p.nome, onclick: () => changeQty(p, 1, input, row, priceEl, btnHalf) }, '+')
     );
+
+    row.append(info, qtyDiv);
     return row;
   }
 

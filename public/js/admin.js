@@ -564,11 +564,13 @@
     prods.forEach((p) => {
       if (p.categoria_id !== atual) {
         atual = p.categoria_id;
-        rows.push(el('tr', { class: 'group-row' }, el('td', { colspan: '5' }, p.categoria)));
+        rows.push(el('tr', { class: 'group-row' }, el('td', { colspan: '6' }, p.categoria)));
       }
+      const meia = (p.permite_meia !== false && !(p.permite_meia === undefined && p.nome && p.nome.toLowerCase().includes('gelo')));
       rows.push(el('tr', {},
         el('td', {}, el('b', {}, p.nome)),
         el('td', {}, precoInput(p)),
+        el('td', {}, el('span', { class: 'badge ' + (meia ? 'on' : 'off') }, meia ? '½ Sim' : '1 Inteiro')),
         el('td', {}, String(p.ordem)),
         el('td', {}, el('span', { class: 'badge ' + (p.ativo ? 'on' : 'off') }, p.ativo ? 'Ativo' : 'Inativo')),
         el('td', { class: 'actions' },
@@ -580,22 +582,41 @@
         el('button', { class: 'btn', onclick: () => formProduto(cats) }, '+ Novo produto')),
       rows.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
-            el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
+            el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
             el('tbody', {}, rows)))
         : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum produto cadastrado.')));
   }
 
   function formProduto(cats, p) {
     if (!cats.length) return toast('Cadastre uma categoria primeiro', true);
+    const meiaInicial = p ? (p.permite_meia !== false && !(p.permite_meia === undefined && p.nome && p.nome.toLowerCase().includes('gelo'))) : true;
     const f = {
       categoria_id: el('select', {}, cats.map((c) => el('option', { value: String(c.id), selected: p && p.categoria_id === c.id }, `${c.nome}${c.unidade ? ' (' + c.unidade + ')' : ''} #${c.id}`))),
       nome: el('input', { value: p ? p.nome : '', maxlength: '100', required: '' }),
       preco: el('input', { type: 'number', step: '0.01', min: '0', value: String(p ? p.preco : 0) }),
       ordem: el('input', { type: 'number', value: String(p ? p.ordem : 0) }),
+      permite_meia: el('input', { type: 'checkbox', checked: meiaInicial }),
       ativo: el('input', { type: 'checkbox', checked: p ? !!p.ativo : true }),
     };
     const salvar = () => guard(async () => {
-      const body = { categoria_id: Number(f.categoria_id.value), nome: f.nome.value, preco: Number(f.preco.value), ordem: Number(f.ordem.value), ativo: f.ativo.checked };
+      const body = {
+        categoria_id: Number(f.categoria_id.value),
+        nome: f.nome.value,
+        preco: Number(f.preco.value),
+        ordem: Number(f.ordem.value),
+        ativo: f.ativo.checked,
+        permite_meia: f.permite_meia.checked
+      };
+
+      if (p && p.id) {
+        try {
+          const raw = localStorage.getItem('eisberg_produtos_sem_meia');
+          const set = raw ? new Set(JSON.parse(raw)) : new Set();
+          if (!f.permite_meia.checked) set.add(Number(p.id)); else set.delete(Number(p.id));
+          localStorage.setItem('eisberg_produtos_sem_meia', JSON.stringify([...set]));
+        } catch (_) {}
+      }
+
       if (p) {
         await client.adminAtualizarProduto(p.id, body);
       } else {
@@ -607,6 +628,8 @@
     });
     openModal(p ? 'Editar produto' : 'Novo produto', el('div', {},
       group('Categoria', f.categoria_id), group('Nome', f.nome), group('Preço (R$)', f.preco), group('Ordem', f.ordem),
+      el('label', { class: 'check' }, f.permite_meia, 'Permitir 1/2 unidade (metade do preço)'),
+      el('p', { style: 'font-size:12px;color:#777;margin:-4px 0 12px 24px;line-height:1.3' }, 'Se desmarcado (ex: Gelo), o app só permitirá quantidades inteiras (1, 2, 3...) e não exibirá o botão ½.'),
       el('label', { class: 'check' }, f.ativo, 'Ativo (visível no app)'),
       el('div', { class: 'actions' },
         el('button', { class: 'btn', onclick: salvar }, 'Salvar'),
