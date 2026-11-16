@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="img/icon-192.png">
   <link rel="apple-touch-icon" href="img/icon-192.png">
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
   <!-- Login -->
@@ -43,6 +43,7 @@
         <span class="sub" style="font-size:14px">Administração</span>
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn sm" id="btn-exportar" style="background:#2e7d32;border-color:#2e7d32;color:#fff" title="Exportar backup completo de todos os dados do sistema">📦 Exportar Dados</button>
         <a class="btn sm" href="index.html" target="_blank">Ver app</a>
         <button class="btn sm" id="logout">Sair</button>
       </div>
@@ -57,12 +58,12 @@
   </div>
 
   <div id="modal-root"></div>
-  <script src="js/supabase-client.js?v=7"></script>
-  <script src="js/admin.js?v=7"></script>
+  <script src="js/supabase-client.js?v=8"></script>
+  <script src="js/admin.js?v=8"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=7').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=8').then((reg) => {
           reg.update();
         }).catch(console.error);
       });

@@ -109,6 +109,67 @@
 
   function group(label, input) { return el('div', { class: 'form-group' }, el('label', {}, label), input); }
 
+  /* ---------------- Exportação / Backup ---------------- */
+  function downloadJson(data, filename) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+
+  async function exportarDadosSistema() {
+    const btn = $('btn-exportar');
+    const txtOriginal = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '📦 Exportando...';
+    }
+    try {
+      toast('Gerando arquivo de backup completo...');
+      const backup = await client.adminExportarTudo();
+      const pad = (n) => String(n).padStart(2, '0');
+      const d = new Date();
+      const filename = `eisberg-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}h${pad(d.getMinutes())}.json`;
+      downloadJson(backup, filename);
+      toast(`Backup baixado! (${backup.resumo.total_categorias} categorias, ${backup.resumo.total_produtos} produtos, ${backup.resumo.total_pedidos} pedidos)`);
+
+      openModal('📦 Backup do Sistema Exportado com Sucesso', el('div', { style: 'line-height:1.6' },
+        el('p', { style: 'font-size:15px;color:var(--ok);font-weight:700;margin:0 0 10px' }, '✅ Todos os dados do sistema foram exportados com segurança!'),
+        el('p', { style: 'font-size:13.5px;color:#333;margin:0 0 12px' }, 'O arquivo foi salvo no seu computador/celular: ', el('code', { style: 'background:#f0f0f0;padding:2px 6px;border-radius:4px;color:#d9141e;font-weight:700' }, filename)),
+        el('div', { style: 'background:#f8f9fa;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:16px' },
+          el('b', { style: 'font-size:14px;color:#111' }, 'Conteúdo incluído neste arquivo:'),
+          el('ul', { style: 'margin:8px 0 0 18px;padding:0;font-size:13.5px;color:#444' },
+            el('li', {}, `${backup.resumo.total_categorias} Categorias`),
+            el('li', {}, `${backup.resumo.total_produtos} Produtos cadastrados (preços, unidades e status)`),
+            el('li', {}, `${backup.resumo.total_pedidos} Pedidos completos (com todos os itens)`),
+            el('li', {}, `Configurações da empresa (${backup.configuracoes.nome_empresa || 'EISBERG'}, telefone e WhatsApp)`)
+          )
+        ),
+        el('div', { class: 'actions' },
+          el('button', { class: 'btn', onclick: closeModal }, 'OK, Entendido')
+        )
+      ));
+    } catch (err) {
+      if (err && (err.status === 401 || /jwt/i.test(err.message || ''))) {
+        sair(true);
+      } else {
+        toast((err && err.message) || 'Erro ao exportar dados', true);
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = txtOriginal;
+      }
+    }
+  }
+
   /* ---------------- Login / Sessão ---------------- */
   function estaLogado() {
     return !!(client && client.getToken());
@@ -199,6 +260,11 @@
   });
 
   $('logout').addEventListener('click', () => sair(false));
+
+  const btnExp = $('btn-exportar');
+  if (btnExp) {
+    btnExp.addEventListener('click', exportarDadosSistema);
+  }
 
   $('tabs').addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-tab]');
@@ -642,7 +708,15 @@
       }
     });
 
-    main.replaceChildren(form);
+    const backupBox = el('div', { style: 'max-width:580px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,0.1);margin-top:20px' },
+      el('h3', { style: 'margin:0 0 8px;color:#2e7d32;font-size:20px;display:flex;align-items:center;gap:6px' }, '📦 Backup e Exportação Completa'),
+      el('p', { style: 'color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.4' },
+        'Baixe uma cópia de segurança completa contendo todos os produtos, categorias, pedidos e configurações do sistema em formato JSON.'),
+      el('button', { type: 'button', class: 'btn', style: 'background:#2e7d32;border-color:#2e7d32;font-size:15px;padding:10px 20px', onclick: exportarDadosSistema },
+        '📦 Exportar Dados do Sistema (Backup JSON)')
+    );
+
+    main.replaceChildren(form, backupBox);
   }
 
   mostrar();

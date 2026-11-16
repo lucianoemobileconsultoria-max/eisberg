@@ -357,6 +357,40 @@
       });
     }
 
+    // --- Backup / Exportação Completa ---
+    async function adminExportarTudo() {
+      var resultados = await Promise.all([
+        req('/rest/v1/categorias?select=*&order=coluna.asc,ordem.asc,id.asc'),
+        req('/rest/v1/produtos?select=*,categorias(nome,coluna,ordem)&order=ordem.asc,id.asc'),
+        req('/rest/v1/pedidos?select=*,pedido_itens(*)&order=id.asc'),
+        getConfig()
+      ]);
+      var cats = resultados[0] || [];
+      var prods = (resultados[1] || []).map(function (p) {
+        var copy = Object.assign({}, p);
+        copy.categoria_nome = (p.categorias && p.categorias.nome) || '';
+        return copy;
+      });
+      var pedidos = resultados[2] || [];
+      var cfg = resultados[3] || {};
+
+      return {
+        sistema: 'EISBERG',
+        versao: '1.0',
+        gerado_em: new Date().toISOString(),
+        gerado_em_formatado: new Date().toLocaleString('pt-BR'),
+        resumo: {
+          total_categorias: cats.length,
+          total_produtos: prods.length,
+          total_pedidos: pedidos.length,
+        },
+        configuracoes: cfg,
+        categorias: cats,
+        produtos: prods,
+        pedidos: pedidos,
+      };
+    }
+
     return {
       config: opts,
       setToken: setToken,
@@ -365,6 +399,7 @@
       getConfig: getConfig,
       getCachedConfig: readCachedCompanyConfig,
       salvarConfig: salvarConfig,
+      adminExportarTudo: adminExportarTudo,
       getProximoCodigo: getProximoCodigo,
       getCatalogo: getCatalogo,
       criarPedido: criarPedido,

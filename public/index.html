@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -11,8 +12,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="EISBERG">
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
+
 <body>
   <!-- Tela de Login do App de Pedidos -->
   <div class="login-wrap" id="app-login">
@@ -22,7 +24,8 @@
         <h1 class="brand-name" id="login-empresa-nome" style="font-size:36px;margin:0">EISBERG</h1>
       </div>
       <h2 style="text-align:center;margin:0 0 6px;color:var(--red);font-size:24px">Acesso ao App</h2>
-      <p style="text-align:center;color:var(--muted);font-size:14px;margin:0 0 18px">Entre com seu login e senha para fazer pedidos</p>
+      <p style="text-align:center;color:var(--muted);font-size:14px;margin:0 0 18px">Entre com seu login e senha para
+        fazer pedidos</p>
 
       <div class="form-group">
         <label for="app-email">Login ou E-mail</label>
@@ -52,7 +55,8 @@
           <h1 class="brand-name" id="empresa-nome">EISBERG</h1>
           <div class="brand-phone" id="empresa-fone-box">
             <svg class="wa-icon" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
-              <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z"/>
+              <path
+                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z" />
             </svg>
             <span id="empresa-fone">(51) 98177.7079</span>
           </div>
@@ -61,8 +65,11 @@
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
         <h2 class="app-title">PEDIDO</h2>
         <div id="user-badge" style="display:flex;align-items:center;gap:6px">
-          <span id="user-badge-email" style="font-size:11.5px;color:#666;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="Usuário logado"></span>
-          <button type="button" id="btn-app-logout" class="btn sm secondary" style="padding:1px 6px;font-size:11px;border-radius:4px" title="Sair do aplicativo">Sair</button>
+          <span id="user-badge-email"
+            style="font-size:11.5px;color:#666;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="Usuário logado"></span>
+          <button type="button" id="btn-app-logout" class="btn sm secondary"
+            style="padding:1px 6px;font-size:11px;border-radius:4px" title="Sair do aplicativo">Sair</button>
         </div>
       </div>
     </header>
@@ -74,7 +81,8 @@
       </fieldset>
 
       <fieldset class="field" id="f-endereco">
-        <legend>Endereço <span class="req">*</span> <button type="button" id="btn-gps" class="btn-gps" title="Usar localização atual do GPS">📍 Usar GPS</button></legend>
+        <legend>Endereço <span class="req">*</span> <button type="button" id="btn-gps" class="btn-gps"
+            title="Usar localização atual do GPS">📍 Usar GPS</button></legend>
         <input type="text" id="endereco" maxlength="200" required placeholder="Rua, número, bairro">
       </fieldset>
 
@@ -143,7 +151,7 @@
       </div>
       <h2 id="sending-title" class="sending-title">ENVIANDO PEDIDO...</h2>
       <p id="sending-status" class="sending-status">Conectando ao sistema...</p>
-      
+
       <!-- Barra de Progresso -->
       <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div class="progress-bar" id="sending-progress-bar" style="width: 0%;"></div>
@@ -163,12 +171,12 @@
     </div>
   </div>
 
-  <script src="js/supabase-client.js?v=7"></script>
-  <script src="js/app.js?v=7"></script>
+  <script src="js/supabase-client.js?v=8"></script>
+  <script src="js/app.js?v=8"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=7').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=8').then((reg) => {
           reg.update();
         }).catch(console.error);
       });
@@ -209,5 +217,5 @@
     }
   </script>
 </body>
-</html>
 
+</html>

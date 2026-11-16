@@ -2,7 +2,7 @@
 /**
  * EISBERG Service Worker - PWA Offline & Cache
  */
-const CACHE_NAME = 'eisberg-cache-v7';
+const CACHE_NAME = 'eisberg-cache-v8';
 const STATIC_ASSETS = [
   './',
   './index.html',
