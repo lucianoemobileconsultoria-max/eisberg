@@ -19,7 +19,7 @@
       else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
       else e.setAttribute(k, v);
     }
-    for (const c of children.flat()) if (c != null && c !== false) e.append(c);
+    for (const c of children.flat(Infinity)) if (c != null && c !== false) e.append(c);
     return e;
   }
 
@@ -379,9 +379,9 @@
         info('Cód.', p.cod), info('Data', p.data), info('Recebido em', fmtData(p.criado_em)),
         el('div', {}, el('b', {}, 'Status: '), el('span', { class: 'badge ' + p.status }, STATUS[p.status]))),
       el('div', { class: 'table-wrap' }, el('table', { class: 'items-list' },
-        el('tbody', {}, porCat.map((g) => [
+        el('tbody', {}, porCat.flatMap((g) => [
           el('tr', { class: 'group-row' }, el('td', { colspan: '3' }, g.nome)),
-          g.itens.map((it) => {
+          ...g.itens.map((it) => {
             const isMetade = (Number(it.quantidade) === 0.5);
             const qtdTxt = isMetade ? '1/2' : String(it.quantidade);
             const subtotal = Number(it.quantidade) * (it.preco > 0 ? it.preco : 0);

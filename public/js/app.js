@@ -22,7 +22,7 @@
       else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
       else e.setAttribute(k, v);
     }
-    for (const c of children) e.append(c);
+    for (const c of children.flat(Infinity)) if (c != null && c !== false) e.append(c);
     return e;
   }
 
