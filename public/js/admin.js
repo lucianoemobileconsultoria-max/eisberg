@@ -414,214 +414,241 @@
   <title>Cupom Pedido #${p.id} - ${escapeHtml(nomeEmpresa)}</title>
   <style>
     @page {
-      size: 80mm auto;
-      margin: 4mm 2mm;
+      size: auto;
+      margin: 1.5cm 0;
     }
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
+    html, body {
+      background: #fff;
+      color: #000;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+    }
     body {
       font-family: 'Courier New', Courier, 'Lucida Console', monospace;
-      font-size: 11.5px;
-      line-height: 1.25;
+      font-size: 12px;
+      line-height: 1.35;
       color: #000;
       background: #fff;
-      padding: 6px;
+      box-sizing: border-box;
+    }
+    .cupom-folha {
+      box-sizing: border-box;
       width: 100%;
-      max-width: 320px;
+      max-width: 100%;
       margin: 0 auto;
+      padding: 0.8cm 3cm;
     }
     .center { text-align: center; }
     .right { text-align: right; }
     .bold { font-weight: bold; }
     .empresa-nome {
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 900;
       letter-spacing: 1px;
       text-transform: uppercase;
       text-align: center;
-      margin-bottom: 2px;
+      margin-bottom: 3px;
     }
     .empresa-sub {
-      font-size: 10px;
+      font-size: 11px;
       text-align: center;
       color: #222;
       margin-bottom: 2px;
     }
     .empresa-contato {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: bold;
       text-align: center;
     }
     .linha-traco {
       border-top: 1px dashed #000;
-      margin: 6px 0;
+      margin: 8px 0;
     }
     .linha-dupla {
       border-top: 2px dashed #000;
-      margin: 6px 0;
+      margin: 8px 0;
     }
     .doc-titulo {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 900;
       text-align: center;
       letter-spacing: 0.5px;
     }
     .doc-sub {
-      font-size: 9px;
+      font-size: 9.5px;
       text-align: center;
       color: #333;
     }
     .linha-info {
       display: flex;
       justify-content: space-between;
-      gap: 4px;
-      font-size: 11px;
-      margin-bottom: 2px;
+      gap: 8px;
+      font-size: 11.5px;
+      margin-bottom: 3px;
     }
     .secao-titulo {
-      font-size: 11px;
+      font-size: 11.5px;
       font-weight: 900;
-      margin-bottom: 3px;
+      margin-bottom: 4px;
       text-transform: uppercase;
     }
     .tabela-itens {
       width: 100%;
       border-collapse: collapse;
-      font-size: 10.5px;
-      margin: 4px 0;
+      font-size: 11px;
+      margin: 6px 0;
     }
     .tabela-itens th {
       border-bottom: 1px dashed #000;
-      padding: 3px 1px;
-      font-size: 9.5px;
+      padding: 4px 2px;
+      font-size: 10.5px;
       font-weight: bold;
       text-align: left;
     }
     .tabela-itens td {
-      padding: 3px 1px;
+      padding: 4px 2px;
       vertical-align: top;
     }
-    .col-item { width: 6%; font-size: 9px; }
+    .col-item { width: 6%; font-size: 10px; }
     .col-qtd { width: 14%; text-align: center; }
-    .col-un { width: 14%; text-align: center; font-size: 9.5px; }
-    .col-desc { width: 40%; word-break: break-word; }
-    .sub-cat { font-size: 8.5px; color: #444; font-weight: normal; }
-    .col-unit { width: 12%; font-size: 9px; white-space: nowrap; }
+    .col-un { width: 14%; text-align: center; font-size: 10px; }
+    .col-desc { width: 38%; word-break: break-word; }
+    .sub-cat { font-size: 9px; color: #444; font-weight: normal; }
+    .col-unit { width: 14%; font-size: 10px; white-space: nowrap; }
     .col-tot { width: 14%; white-space: nowrap; }
     .linha-total {
       display: flex;
       justify-content: space-between;
-      font-size: 11px;
-      margin-bottom: 2px;
+      font-size: 11.5px;
+      margin-bottom: 3px;
     }
     .linha-total-destaque {
       display: flex;
       justify-content: space-between;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 900;
-      margin-top: 4px;
-      padding-top: 4px;
+      margin-top: 6px;
+      padding-top: 6px;
       border-top: 1px solid #000;
     }
     .obs-bloco {
-      font-size: 10.5px;
-      line-height: 1.3;
-      padding: 2px 0;
+      font-size: 11px;
+      line-height: 1.35;
+      padding: 3px 0;
     }
     .canhoto {
-      font-size: 10px;
-      margin-top: 8px;
-      line-height: 1.5;
+      font-size: 10.5px;
+      margin-top: 12px;
+      line-height: 1.6;
     }
     .rodape {
       text-align: center;
-      font-size: 10.5px;
+      font-size: 11px;
       font-weight: bold;
-      margin-top: 6px;
+      margin-top: 8px;
     }
     @media print {
+      @page {
+        size: auto;
+        margin: 1cm 0;
+      }
       body {
-        width: 100%;
-        max-width: none;
-        padding: 0;
-        margin: 0;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        background: #fff !important;
+      }
+      .cupom-folha {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        padding-left: 3cm !important;
+        padding-right: 3cm !important;
+        padding-top: 0.5cm !important;
+        padding-bottom: 1.5cm !important;
       }
     }
   </style>
 </head>
 <body>
-  <div class="empresa-nome">${escapeHtml(nomeEmpresa)}</div>
-  <div class="empresa-sub">Sorvetes, Picolés e Congelados</div>
-  <div class="empresa-contato">Tel/WhatsApp: ${escapeHtml(foneEmpresa)}</div>
-  
-  <div class="linha-dupla"></div>
-  <div class="doc-titulo">COMPROVANTE DE PEDIDO</div>
-  <div class="doc-sub">DOCUMENTO NÃO FISCAL</div>
-  <div class="linha-traco"></div>
-
-  <div class="linha-info">
-    <span><b>PEDIDO:</b> #${p.id}</span>
-    <span><b>CÓD:</b> ${escapeHtml(p.cod || p.id)}</span>
-  </div>
-  <div class="linha-info">
-    <span><b>DATA:</b> ${escapeHtml(dataTxt)}</span>
-    <span><b>HORA:</b> ${escapeHtml(horaTxt)}</span>
-  </div>
-  <div class="linha-info">
-    <span><b>STATUS:</b> ${escapeHtml(statusTxt)}</span>
-  </div>
-
-  <div class="linha-traco"></div>
-  <div class="secao-titulo">DADOS DO CLIENTE</div>
-  <div style="margin-bottom:2px"><b>CLIENTE:</b> ${escapeHtml(p.cliente || '—')}</div>
-  <div style="margin-bottom:2px"><b>ENDEREÇO:</b> ${escapeHtml(p.endereco || '—')}</div>
-  <div><b>CIDADE:</b> ${escapeHtml(p.cidade || '—')}</div>
-
-  <div class="linha-traco"></div>
-  <div class="secao-titulo">ITENS DO PEDIDO</div>
-  <table class="tabela-itens">
-    <thead>
-      <tr>
-        <th class="col-item">#</th>
-        <th class="col-qtd">QTD</th>
-        <th class="col-un">UN</th>
-        <th class="col-desc">DESCRIÇÃO</th>
-        <th class="col-unit right">UNIT</th>
-        <th class="col-tot right">TOTAL</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itensHtml || '<tr><td colspan="6" class="center">Nenhum item</td></tr>'}
-    </tbody>
-  </table>
-
-  <div class="linha-traco"></div>
-  <div class="linha-total">
-    <span>QTD TOTAL DE ITENS:</span>
-    <span class="bold">${totalQtdTxt} (${itens.length} prod.)</span>
-  </div>
-  <div class="linha-total-destaque">
-    <span>TOTAL DO PEDIDO:</span>
-    <span>${brl(totalValor)}</span>
-  </div>
-
-  ${p.observacoes ? `
+  <div class="cupom-folha">
+    <div class="empresa-nome">${escapeHtml(nomeEmpresa)}</div>
+    <div class="empresa-sub">Sorvetes, Picolés e Congelados</div>
+    <div class="empresa-contato">Tel/WhatsApp: ${escapeHtml(foneEmpresa)}</div>
+    
+    <div class="linha-dupla"></div>
+    <div class="doc-titulo">COMPROVANTE DE PEDIDO</div>
+    <div class="doc-sub">DOCUMENTO NÃO FISCAL</div>
     <div class="linha-traco"></div>
-    <div class="secao-titulo">OBSERVAÇÕES</div>
-    <div class="obs-bloco">${escapeHtml(p.observacoes)}</div>
-  ` : ''}
 
-  <div class="linha-traco"></div>
-  <div class="canhoto">
-    <div>RECEBIDO EM: _____/_____/_________</div>
-    <div style="margin-top:12px">ASSINATURA: ____________________________________</div>
+    <div class="linha-info">
+      <span><b>PEDIDO:</b> #${p.id}</span>
+      <span><b>CÓD:</b> ${escapeHtml(p.cod || p.id)}</span>
+    </div>
+    <div class="linha-info">
+      <span><b>DATA:</b> ${escapeHtml(dataTxt)}</span>
+      <span><b>HORA:</b> ${escapeHtml(horaTxt)}</span>
+    </div>
+    <div class="linha-info">
+      <span><b>STATUS:</b> ${escapeHtml(statusTxt)}</span>
+    </div>
+
+    <div class="linha-traco"></div>
+    <div class="secao-titulo">DADOS DO CLIENTE</div>
+    <div style="margin-bottom:2px"><b>CLIENTE:</b> ${escapeHtml(p.cliente || '—')}</div>
+    <div style="margin-bottom:2px"><b>ENDEREÇO:</b> ${escapeHtml(p.endereco || '—')}</div>
+    <div><b>CIDADE:</b> ${escapeHtml(p.cidade || '—')}</div>
+
+    <div class="linha-traco"></div>
+    <div class="secao-titulo">ITENS DO PEDIDO</div>
+    <table class="tabela-itens">
+      <thead>
+        <tr>
+          <th class="col-item">#</th>
+          <th class="col-qtd">QTD</th>
+          <th class="col-un">UN</th>
+          <th class="col-desc">DESCRIÇÃO</th>
+          <th class="col-unit right">UNIT</th>
+          <th class="col-tot right">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itensHtml || '<tr><td colspan="6" class="center">Nenhum item</td></tr>'}
+      </tbody>
+    </table>
+
+    <div class="linha-traco"></div>
+    <div class="linha-total">
+      <span>QTD TOTAL DE ITENS:</span>
+      <span class="bold">${totalQtdTxt} (${itens.length} prod.)</span>
+    </div>
+    <div class="linha-total-destaque">
+      <span>TOTAL DO PEDIDO:</span>
+      <span>${brl(totalValor)}</span>
+    </div>
+
+    ${p.observacoes ? `
+      <div class="linha-traco"></div>
+      <div class="secao-titulo">OBSERVAÇÕES</div>
+      <div class="obs-bloco">${escapeHtml(p.observacoes)}</div>
+    ` : ''}
+
+    <div class="linha-traco"></div>
+    <div class="canhoto">
+      <div>RECEBIDO EM: _____/_____/_________</div>
+      <div style="margin-top:14px">ASSINATURA: ____________________________________</div>
+    </div>
+
+    <div class="linha-dupla"></div>
+    <div class="rodape">Obrigado pela preferência!</div>
   </div>
-
-  <div class="linha-dupla"></div>
-  <div class="rodape">Obrigado pela preferência!</div>
 </body>
 </html>`;
   }

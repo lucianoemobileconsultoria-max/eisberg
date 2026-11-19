@@ -1407,11 +1407,16 @@ td.actions .btn {
 }
 
 @media print {
+  @page {
+    size: auto;
+    margin: 1.5cm 0;
+  }
+
   body {
     background: #fff;
     color: #000;
-    margin: 0;
-    padding: 0;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   #panel,
@@ -1440,9 +1445,14 @@ td.actions .btn {
   .modal {
     max-height: none;
     box-shadow: none;
-    padding: 8px;
-    max-width: 340px;
-    margin: 0 auto;
+    padding-left: 3cm !important;
+    padding-right: 3cm !important;
+    padding-top: 0.8cm !important;
+    padding-bottom: 1.5cm !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 auto !important;
     border: none;
     font-family: 'Courier New', Courier, monospace, sans-serif;
     color: #000;
