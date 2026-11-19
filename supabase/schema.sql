@@ -1,6 +1,9 @@
 -- =====================================================================
 -- EISBERG - Banco de dados (Supabase / PostgreSQL)
 --
+-- LINK DIRETO DO SQL EDITOR DESTE PROJETO NO SUPABASE:
+-- https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj/sql/66105b49-93b9-49c8-b59e-af92eb40377a
+--
 -- ATUALIZAÇÃO: opção de permitir ou não quantidade 1/2 (meia) por produto:
 --   alter table public.produtos add column if not exists permite_meia boolean not null default true;
 --   update public.produtos set permite_meia = false where lower(nome) like '%gelo%';

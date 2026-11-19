@@ -8,7 +8,7 @@ Conectado diretamente ao **Supabase (PostgreSQL)** com Row Level Security (RLS) 
 ## 🚀 Como Inicializar o Banco no Supabase (Passo a Passo)
 
 ### 1. Criar as tabelas e o cardápio
-1. Acesse o seu projeto no Supabase: [https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj](https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj)
+1. Acesse o SQL Editor do seu projeto no Supabase: [https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj/sql/66105b49-93b9-49c8-b59e-af92eb40377a](https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj/sql/66105b49-93b9-49c8-b59e-af92eb40377a)
 2. No menu lateral esquerdo, clique em **SQL Editor**.
 3. Clique em **New query**.
 4. Abra o arquivo [`supabase/schema.sql`](supabase/schema.sql), copie todo o seu conteúdo e cole no editor.
