@@ -290,14 +290,36 @@
   const MESES_NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
   function parsePedidoDate(p) {
-    if (p.data && typeof p.data === 'string' && p.data.includes('/')) {
-      const parts = p.data.trim().split('/');
-      if (parts.length === 3) {
-        const d = parseInt(parts[0], 10);
-        const m = parseInt(parts[1], 10) - 1;
-        const y = parseInt(parts[2], 10);
-        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
-          return new Date(y, m, d, 12, 0, 0);
+    if (p.data && typeof p.data === 'string') {
+      const trimmed = p.data.trim();
+      if (trimmed.includes('/')) {
+        const parts = trimmed.split('/');
+        if (parts.length === 3) {
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const y = parseInt(parts[2], 10);
+          if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+            return new Date(y, m, d, 12, 0, 0);
+          }
+        }
+      } else if (trimmed.includes('-')) {
+        const parts = trimmed.split('-');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10) - 1;
+            const d = parseInt(parts[2], 10);
+            if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+              return new Date(y, m, d, 12, 0, 0);
+            }
+          } else {
+            const d = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10) - 1;
+            const y = parseInt(parts[2], 10);
+            if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+              return new Date(y, m, d, 12, 0, 0);
+            }
+          }
         }
       }
     }
@@ -329,14 +351,21 @@
   function pedidoNoPeriodo(p, periodo, dataIni, dataFim) {
     if (!periodo || periodo === 'todos') return true;
     const dt = parsePedidoDate(p);
-    if (!dt) return true;
+    if (!dt) return false;
 
     const agora = new Date();
+    const dtNorm = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+    const hojeNorm = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
 
     if (periodo === 'hoje') {
-      return dt.getFullYear() === agora.getFullYear() &&
-        dt.getMonth() === agora.getMonth() &&
-        dt.getDate() === agora.getDate();
+      return dtNorm === hojeNorm;
+    }
+
+    if (periodo === 'ontem') {
+      const ontem = new Date(agora);
+      ontem.setDate(agora.getDate() - 1);
+      const ontemNorm = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate()).getTime();
+      return dtNorm === ontemNorm;
     }
 
     if (periodo === 'semana_atual') {
@@ -435,11 +464,14 @@
     // Filtrar pelo status clicado (se houver)
     const pedidosExibidos = pedidosNoPer.filter((p) => !filtro.status || p.status === filtro.status);
 
-    // Calcular valores dos pedidos exibidos
+    // Totais do conjunto filtrado
+    const totalRegistros = pedidosExibidos.length;
     const totalValor = pedidosExibidos.reduce((acc, p) => acc + (p.total || 0), 0);
     const totalItens = pedidosExibidos.reduce((acc, p) => acc + (p.total_itens || 0), 0);
 
     const agora = new Date();
+    const ontemRef = new Date(agora);
+    ontemRef.setDate(agora.getDate() - 1);
     const wAtual = getWeekRange(agora);
     const lastWRef = new Date(agora);
     lastWRef.setDate(agora.getDate() - 7);
@@ -451,6 +483,7 @@
     const rotuloPeriodo = {
       todos: 'Todo o histórico',
       hoje: `Hoje (${formatarDataCurta(agora)})`,
+      ontem: `Ontem (${formatarDataCurta(ontemRef)})`,
       semana_atual: `Esta Semana (${formatarDataCurta(wAtual.start)} a ${formatarDataCurta(wAtual.end)})`,
       semana_passada: `Semana Passada (${formatarDataCurta(wPassada.start)} a ${formatarDataCurta(wPassada.end)})`,
       '7dias': 'Últimos 7 dias',
@@ -460,17 +493,58 @@
       personalizado: (filtro.dataInicio || filtro.dataFim) ? `Personalizado (${filtro.dataInicio || '...'} a ${filtro.dataFim || '...'})` : 'Personalizado',
     }[filtro.periodo] || 'Período';
 
+    // Paginação e controle de limite de registros
+    const limite = parseInt(paginacaoPedidos.limite, 10) || 0;
+    let totalPaginas = 1;
+    let paginaAtual = 1;
+    let inicioIdx = 0;
+    let fimIdx = totalRegistros;
+    let pedidosPaginados = pedidosExibidos;
+
+    if (limite > 0) {
+      totalPaginas = Math.max(1, Math.ceil(totalRegistros / limite));
+      if (paginacaoPedidos.pagina > totalPaginas) paginacaoPedidos.pagina = totalPaginas;
+      if (paginacaoPedidos.pagina < 1) paginacaoPedidos.pagina = 1;
+      paginaAtual = paginacaoPedidos.pagina;
+      inicioIdx = (paginaAtual - 1) * limite;
+      fimIdx = Math.min(inicioIdx + limite, totalRegistros);
+      pedidosPaginados = pedidosExibidos.slice(inicioIdx, fimIdx);
+    }
+
+    const totalValorPagina = pedidosPaginados.reduce((acc, p) => acc + (p.total || 0), 0);
+    const totalItensPagina = pedidosPaginados.reduce((acc, p) => acc + (p.total_itens || 0), 0);
+
     const stat = (key, label, n) =>
       el('div', { class: 'stat' + (filtro.status === key ? ' active' : ''), onclick: () => { filtro.status = (filtro.status === key ? '' : key); paginacaoPedidos.pagina = 1; viewPedidos(); } },
         el('b', {}, String(n)), el('span', {}, label));
 
     const cardValor = el('div', { class: 'stat stat-valor', title: 'Valor total dos pedidos deste filtro' },
       el('b', { style: 'font-size:24px;color:#15803d;white-space:nowrap' }, brl(totalValor)),
-      el('span', { style: 'color:#166534;font-weight:700' }, `💰 Total em Valor (${pedidosExibidos.length} ped. • ${totalItens} un.)`)
+      el('span', { style: 'color:#166534;font-weight:700' }, `💰 Total Filtrado (${pedidosExibidos.length} ped. • ${totalItens} un.)`),
+      (limite > 0 && totalPaginas > 1)
+        ? el('div', { style: 'font-size:12px;color:#15803d;margin-top:4px;font-weight:600' },
+            `Nesta página (${pedidosPaginados.length} ped.): ${brl(totalValorPagina)}`)
+        : null
     );
 
     const busca = el('input', { type: 'search', placeholder: 'Buscar cliente, cidade, cód. ou nº', value: filtro.q });
-    busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') { filtro.q = busca.value.trim(); paginacaoPedidos.pagina = 1; viewPedidos(); } });
+    let debounceBusca = null;
+    busca.addEventListener('input', () => {
+      clearTimeout(debounceBusca);
+      debounceBusca = setTimeout(() => {
+        filtro.q = busca.value.trim();
+        paginacaoPedidos.pagina = 1;
+        viewPedidos();
+      }, 250);
+    });
+    busca.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(debounceBusca);
+        filtro.q = busca.value.trim();
+        paginacaoPedidos.pagina = 1;
+        viewPedidos();
+      }
+    });
 
     const pill = (key, label) =>
       el('button', {
@@ -485,7 +559,8 @@
       onchange: (e) => { filtro.periodo = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     },
       el('option', { value: 'todos', selected: filtro.periodo === 'todos' }, '📅 Todo o histórico'),
-      el('option', { value: 'hoje', selected: filtro.periodo === 'hoje' }, '📅 Hoje'),
+      el('option', { value: 'hoje', selected: filtro.periodo === 'hoje' }, `📅 Hoje (${formatarDataCurta(agora)})`),
+      el('option', { value: 'ontem', selected: filtro.periodo === 'ontem' }, `📅 Ontem (${formatarDataCurta(ontemRef)})`),
       el('option', { value: 'semana_atual', selected: filtro.periodo === 'semana_atual' }, `📅 Esta Semana (${formatarDataCurta(wAtual.start)} a ${formatarDataCurta(wAtual.end)})`),
       el('option', { value: 'semana_passada', selected: filtro.periodo === 'semana_passada' }, `📅 Semana Passada (${formatarDataCurta(wPassada.start)} a ${formatarDataCurta(wPassada.end)})`),
       el('option', { value: '7dias', selected: filtro.periodo === '7dias' }, '📅 Últimos 7 dias'),
@@ -522,25 +597,6 @@
         }
       }, '✕ Limpar')
       : null;
-
-    // Paginação e controle de limite de registros
-    const totalRegistros = pedidosExibidos.length;
-    const limite = parseInt(paginacaoPedidos.limite, 10) || 0;
-    let totalPaginas = 1;
-    let paginaAtual = 1;
-    let inicioIdx = 0;
-    let fimIdx = totalRegistros;
-    let pedidosPaginados = pedidosExibidos;
-
-    if (limite > 0) {
-      totalPaginas = Math.max(1, Math.ceil(totalRegistros / limite));
-      if (paginacaoPedidos.pagina > totalPaginas) paginacaoPedidos.pagina = totalPaginas;
-      if (paginacaoPedidos.pagina < 1) paginacaoPedidos.pagina = 1;
-      paginaAtual = paginacaoPedidos.pagina;
-      inicioIdx = (paginaAtual - 1) * limite;
-      fimIdx = Math.min(inicioIdx + limite, totalRegistros);
-      pedidosPaginados = pedidosExibidos.slice(inicioIdx, fimIdx);
-    }
 
     function criarSelectLimite(sufixo = '') {
       return el('select', {
@@ -653,8 +709,12 @@
         el('button', { class: 'btn secondary', onclick: () => { filtro.q = busca.value.trim(); paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Buscar'),
         el('div', { class: 'periodo-pills' },
           pill('todos', 'Todos'),
+          pill('hoje', 'Hoje'),
+          pill('ontem', 'Ontem'),
           pill('semana_atual', 'Esta Semana'),
+          pill('semana_passada', 'Semana Passada'),
           pill('mes_atual', 'Este Mês'),
+          pill('mes_passado', 'Mês Passado'),
           selectPeriodo,
           filtro.periodo === 'personalizado' ? el('div', { style: 'display:inline-flex;gap:4px;align-items:center' }, el('span', { style: 'font-size:12px' }, 'De:'), inputDataIni, el('span', { style: 'font-size:12px' }, 'Até:'), inputDataFim) : null
         ),
@@ -685,14 +745,29 @@
                     el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
                     el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir'))))),
               el('tfoot', {},
-                el('tr', { class: 'table-footer-row' },
-                  el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:700' },
-                    limite > 0 && totalPaginas > 1
-                      ? `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedidos (Mostrando ${inicioIdx + 1}–${fimIdx})`
-                      : `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
-                  el('td', { style: 'padding:12px 14px;font-weight:700' }, `${totalItens} un.`),
-                  el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:16px' }, brl(totalValor)),
-                  el('td', { colspan: '2' }, ''))))),
+                (limite > 0 && totalPaginas > 1)
+                  ? [
+                      el('tr', { class: 'table-footer-row', style: 'background:#f1f5f9' },
+                        el('td', { colspan: '4', style: 'padding:10px 14px;font-weight:700;color:#475569' },
+                          `Subtotal desta página (Mostrando ${inicioIdx + 1} a ${fimIdx}): ${pedidosPaginados.length} pedidos`),
+                        el('td', { style: 'padding:10px 14px;font-weight:700;color:#475569' }, `${totalItensPagina} un.`),
+                        el('td', { style: 'padding:10px 14px;font-weight:700;color:#15803d;font-size:15px' }, brl(totalValorPagina)),
+                        el('td', { colspan: '2' }, '')),
+                      el('tr', { class: 'table-footer-row' },
+                        el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:800' },
+                          `Total Geral Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
+                        el('td', { style: 'padding:12px 14px;font-weight:800' }, `${totalItens} un.`),
+                        el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:17px' }, brl(totalValor)),
+                        el('td', { colspan: '2' }, ''))
+                    ]
+                  : el('tr', { class: 'table-footer-row' },
+                      el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:800' },
+                        `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
+                      el('td', { style: 'padding:12px 14px;font-weight:800' }, `${totalItens} un.`),
+                      el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:17px' }, brl(totalValor)),
+                      el('td', { colspan: '2' }, ''))
+              )
+            )),
             barraPaginacao
           )
         : el('div', { class: 'table-wrap' },
