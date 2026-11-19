@@ -7,7 +7,7 @@
   const client = window.eisbergSupabase ? window.eisbergSupabase.createClient({ token: savedToken }) : null;
 
   let tab = 'pedidos';
-  let filtro = { status: '', q: '' };
+  let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
 
   /* ---------------- Helpers ---------------- */
   function el(tag, props = {}, ...children) {
@@ -286,32 +286,240 @@
   /* =================================================================
      PEDIDOS
      ================================================================= */
+  const MESES_NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+  function parsePedidoDate(p) {
+    if (p.data && typeof p.data === 'string' && p.data.includes('/')) {
+      const parts = p.data.trim().split('/');
+      if (parts.length === 3) {
+        const d = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const y = parseInt(parts[2], 10);
+        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+          return new Date(y, m, d, 12, 0, 0);
+        }
+      }
+    }
+    if (p.criado_em) {
+      const d = new Date(p.criado_em);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+
+  function getWeekRange(ref = new Date()) {
+    const d = new Date(ref);
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay();
+    const diffToMon = (day === 0 ? -6 : 1) - day;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diffToMon);
+    mon.setHours(0, 0, 0, 0);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    sun.setHours(23, 59, 59, 999);
+    return { start: mon, end: sun };
+  }
+
+  function formatarDataCurta(d) {
+    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function pedidoNoPeriodo(p, periodo, dataIni, dataFim) {
+    if (!periodo || periodo === 'todos') return true;
+    const dt = parsePedidoDate(p);
+    if (!dt) return true;
+
+    const agora = new Date();
+
+    if (periodo === 'hoje') {
+      return dt.getFullYear() === agora.getFullYear() &&
+        dt.getMonth() === agora.getMonth() &&
+        dt.getDate() === agora.getDate();
+    }
+
+    if (periodo === 'semana_atual') {
+      const w = getWeekRange(agora);
+      return dt >= w.start && dt <= w.end;
+    }
+
+    if (periodo === 'semana_passada') {
+      const ant = new Date(agora);
+      ant.setDate(agora.getDate() - 7);
+      const w = getWeekRange(ant);
+      return dt >= w.start && dt <= w.end;
+    }
+
+    if (periodo === '7dias') {
+      const limite = new Date(agora);
+      limite.setDate(agora.getDate() - 7);
+      limite.setHours(0, 0, 0, 0);
+      return dt >= limite && dt <= agora;
+    }
+
+    if (periodo === 'mes_atual') {
+      return dt.getFullYear() === agora.getFullYear() &&
+        dt.getMonth() === agora.getMonth();
+    }
+
+    if (periodo === 'mes_passado') {
+      const ant = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+      return dt.getFullYear() === ant.getFullYear() &&
+        dt.getMonth() === ant.getMonth();
+    }
+
+    if (periodo === '30dias') {
+      const limite = new Date(agora);
+      limite.setDate(agora.getDate() - 30);
+      limite.setHours(0, 0, 0, 0);
+      return dt >= limite && dt <= agora;
+    }
+
+    if (periodo === 'personalizado') {
+      if (dataIni) {
+        const [y, m, d] = dataIni.split('-').map(Number);
+        const dtIni = new Date(y, m - 1, d, 0, 0, 0, 0);
+        if (dt < dtIni) return false;
+      }
+      if (dataFim) {
+        const [y, m, d] = dataFim.split('-').map(Number);
+        const dtFim = new Date(y, m - 1, d, 23, 59, 59, 999);
+        if (dt > dtFim) return false;
+      }
+      return true;
+    }
+
+    return true;
+  }
+
   async function viewPedidos() {
-    const { pedidos, resumo } = await client.adminListarPedidos({ status: filtro.status, q: filtro.q });
-    const cont = Object.fromEntries(resumo.map((r) => [r.status, r.n]));
-    const totalGeral = resumo.reduce((a, r) => a + r.n, 0);
+    const { pedidos } = await client.adminListarPedidos({ q: filtro.q });
     const main = $('main');
+
+    // Filtrar pelo período selecionado
+    const pedidosNoPer = pedidos.filter((p) => pedidoNoPeriodo(p, filtro.periodo, filtro.dataInicio, filtro.dataFim));
+
+    // Contagem de status dentro do período selecionado
+    const cont = { novo: 0, em_producao: 0, entregue: 0, cancelado: 0 };
+    pedidosNoPer.forEach((p) => {
+      if (cont[p.status] !== undefined) cont[p.status]++;
+    });
+    const totalGeral = pedidosNoPer.length;
+
+    // Filtrar pelo status clicado (se houver)
+    const pedidosExibidos = pedidosNoPer.filter((p) => !filtro.status || p.status === filtro.status);
+
+    // Calcular valores dos pedidos exibidos
+    const totalValor = pedidosExibidos.reduce((acc, p) => acc + (p.total || 0), 0);
+    const totalItens = pedidosExibidos.reduce((acc, p) => acc + (p.total_itens || 0), 0);
+
+    const agora = new Date();
+    const wAtual = getWeekRange(agora);
+    const lastWRef = new Date(agora);
+    lastWRef.setDate(agora.getDate() - 7);
+    const wPassada = getWeekRange(lastWRef);
+    const mesAtualNome = MESES_NOMES[agora.getMonth()] + '/' + agora.getFullYear();
+    const mesPassadoDate = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+    const mesPassadoNome = MESES_NOMES[mesPassadoDate.getMonth()] + '/' + mesPassadoDate.getFullYear();
+
+    const rotuloPeriodo = {
+      todos: 'Todo o histórico',
+      hoje: `Hoje (${formatarDataCurta(agora)})`,
+      semana_atual: `Esta Semana (${formatarDataCurta(wAtual.start)} a ${formatarDataCurta(wAtual.end)})`,
+      semana_passada: `Semana Passada (${formatarDataCurta(wPassada.start)} a ${formatarDataCurta(wPassada.end)})`,
+      '7dias': 'Últimos 7 dias',
+      mes_atual: `Este Mês (${mesAtualNome})`,
+      mes_passado: `Mês Passado (${mesPassadoNome})`,
+      '30dias': 'Últimos 30 dias',
+      personalizado: (filtro.dataInicio || filtro.dataFim) ? `Personalizado (${filtro.dataInicio || '...'} a ${filtro.dataFim || '...'})` : 'Personalizado',
+    }[filtro.periodo] || 'Período';
 
     const stat = (key, label, n) =>
       el('div', { class: 'stat' + (filtro.status === key ? ' active' : ''), onclick: () => { filtro.status = key; viewPedidos(); } },
         el('b', {}, String(n)), el('span', {}, label));
 
+    const cardValor = el('div', { class: 'stat stat-valor', title: 'Valor total dos pedidos deste filtro' },
+      el('b', { style: 'font-size:24px;color:#15803d;white-space:nowrap' }, brl(totalValor)),
+      el('span', { style: 'color:#166534;font-weight:700' }, `💰 Total em Valor (${pedidosExibidos.length} ped. • ${totalItens} un.)`)
+    );
+
     const busca = el('input', { type: 'search', placeholder: 'Buscar cliente, cidade, cód. ou nº', value: filtro.q });
     busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') { filtro.q = busca.value.trim(); viewPedidos(); } });
+
+    const pill = (key, label) =>
+      el('button', {
+        type: 'button',
+        class: 'btn-pill' + (filtro.periodo === key ? ' active' : ''),
+        onclick: () => { filtro.periodo = key; viewPedidos(); }
+      }, label);
+
+    const selectPeriodo = el('select', {
+      class: 'periodo-select',
+      style: 'border:1.5px solid #bbb;border-radius:8px;padding:7px 10px;font-size:13.5px;background:#fff;font-weight:600;cursor:pointer',
+      onchange: (e) => { filtro.periodo = e.target.value; viewPedidos(); }
+    },
+      el('option', { value: 'todos', selected: filtro.periodo === 'todos' }, '📅 Todo o histórico'),
+      el('option', { value: 'hoje', selected: filtro.periodo === 'hoje' }, '📅 Hoje'),
+      el('option', { value: 'semana_atual', selected: filtro.periodo === 'semana_atual' }, `📅 Esta Semana (${formatarDataCurta(wAtual.start)} a ${formatarDataCurta(wAtual.end)})`),
+      el('option', { value: 'semana_passada', selected: filtro.periodo === 'semana_passada' }, `📅 Semana Passada (${formatarDataCurta(wPassada.start)} a ${formatarDataCurta(wPassada.end)})`),
+      el('option', { value: '7dias', selected: filtro.periodo === '7dias' }, '📅 Últimos 7 dias'),
+      el('option', { value: 'mes_atual', selected: filtro.periodo === 'mes_atual' }, `📅 Este Mês (${mesAtualNome})`),
+      el('option', { value: 'mes_passado', selected: filtro.periodo === 'mes_passado' }, `📅 Mês Passado (${mesPassadoNome})`),
+      el('option', { value: '30dias', selected: filtro.periodo === '30dias' }, '📅 Últimos 30 dias'),
+      el('option', { value: 'personalizado', selected: filtro.periodo === 'personalizado' }, '📅 Escolher datas...')
+    );
+
+    const inputDataIni = el('input', {
+      type: 'date',
+      value: filtro.dataInicio,
+      title: 'Data inicial',
+      style: 'border:1.5px solid #bbb;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff',
+      onchange: (e) => { filtro.dataInicio = e.target.value; viewPedidos(); }
+    });
+    const inputDataFim = el('input', {
+      type: 'date',
+      value: filtro.dataFim,
+      title: 'Data final',
+      style: 'border:1.5px solid #bbb;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff',
+      onchange: (e) => { filtro.dataFim = e.target.value; viewPedidos(); }
+    });
+
+    const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim)
+      ? el('button', {
+        type: 'button',
+        class: 'btn sm secondary',
+        title: 'Limpar filtros',
+        onclick: () => {
+          filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
+          viewPedidos();
+        }
+      }, '✕ Limpar')
+      : null;
 
     main.replaceChildren(
       el('div', { class: 'cards' },
         stat('', 'Todos', totalGeral),
-        ...Object.entries(STATUS).map(([k, v]) => stat(k, v, cont[k] || 0))),
+        ...Object.entries(STATUS).map(([k, v]) => stat(k, v, cont[k] || 0)),
+        cardValor
+      ),
       el('div', { class: 'toolbar' },
         busca,
         el('button', { class: 'btn secondary', onclick: () => { filtro.q = busca.value.trim(); viewPedidos(); } }, 'Buscar'),
+        el('div', { class: 'periodo-pills' },
+          pill('todos', 'Todos'),
+          pill('semana_atual', 'Esta Semana'),
+          pill('mes_atual', 'Este Mês'),
+          selectPeriodo,
+          filtro.periodo === 'personalizado' ? el('div', { style: 'display:inline-flex;gap:4px;align-items:center' }, el('span', { style: 'font-size:12px' }, 'De:'), inputDataIni, el('span', { style: 'font-size:12px' }, 'Até:'), inputDataFim) : null
+        ),
+        btnLimpar,
         el('span', { class: 'grow' }),
-        el('button', { class: 'btn', onclick: () => guard(() => formPedido()) }, '+ Novo pedido')),
-      pedidos.length
+        el('button', { class: 'btn', onclick: () => guard(() => formPedido()) }, '+ Novo pedido')
+      ),
+      pedidosExibidos.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
           el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
-          el('tbody', {}, pedidos.map((p) =>
+          el('tbody', {}, pedidosExibidos.map((p) =>
             el('tr', {},
               el('td', {}, '#' + p.id),
               el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
@@ -324,8 +532,19 @@
                 el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
                 el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
                 el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
-                el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir')))))))
-        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum pedido encontrado.')));
+                el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir'))))),
+          el('tfoot', {},
+            el('tr', { class: 'table-footer-row' },
+              el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:700' },
+                `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${pedidosExibidos.length} pedido${pedidosExibidos.length === 1 ? '' : 's'}`),
+              el('td', { style: 'padding:12px 14px;font-weight:700' }, `${totalItens} un.`),
+              el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:16px' }, brl(totalValor)),
+              el('td', { colspan: '2' }, '')))))
+        : el('div', { class: 'table-wrap' },
+          el('div', { class: 'empty', style: 'padding:32px 16px;text-align:center' },
+            el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}".`),
+            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' }; viewPedidos(); } }, 'Ver todos os pedidos')))
+    );
   }
 
   function excluirPedido(p) {
