@@ -1000,6 +1000,129 @@ textarea {
   border-top: 2px solid #cbd5e1;
 }
 
+/* Paginação e Navegador de Registros */
+.paginacao-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .10);
+  padding: 12px 16px;
+  margin-top: 14px;
+}
+
+.paginacao-info {
+  font-size: 13.5px;
+  color: #4b5563;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paginacao-info b {
+  color: #111827;
+}
+
+.paginacao-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.btn-pag {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+  user-select: none;
+}
+
+.btn-pag:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
+.btn-pag.active {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(217, 20, 30, .25);
+}
+
+.btn-pag:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+}
+
+.btn-pag.ellipsis {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-width: 20px;
+  padding: 0 4px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.paginacao-limite {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.paginacao-select {
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  outline: none;
+}
+
+.paginacao-select:focus {
+  border-color: var(--red);
+}
+
+@media (max-width: 768px) {
+  .paginacao-bar {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .paginacao-info,
+  .paginacao-limite {
+    justify-content: center;
+  }
+  .paginacao-nav {
+    justify-content: center;
+  }
+}
+
 .table-wrap {
   background: #fff;
   border-radius: 10px;

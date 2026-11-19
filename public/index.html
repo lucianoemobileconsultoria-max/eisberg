@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="EISBERG">
-  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
 </head>
 
 <body>
@@ -180,12 +180,12 @@
     </div>
   </div>
 
-  <script src="js/supabase-client.js?v=14"></script>
-  <script src="js/app.js?v=14"></script>
+  <script src="js/supabase-client.js?v=15"></script>
+  <script src="js/app.js?v=15"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=14').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=15').then((reg) => {
           reg.update();
         }).catch(console.error);
       });

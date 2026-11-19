@@ -8,6 +8,7 @@
 
   let tab = 'pedidos';
   let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
+  let paginacaoPedidos = { pagina: 1, limite: 20 };
 
   /* ---------------- Helpers ---------------- */
   function el(tag, props = {}, ...children) {
@@ -392,6 +393,31 @@
     return true;
   }
 
+  function gerarBotoesPaginacao(paginaAtual, totalPaginas) {
+    if (totalPaginas <= 7) {
+      return Array.from({ length: totalPaginas }, (_, i) => i + 1);
+    }
+    const pages = [];
+    if (paginaAtual <= 4) {
+      for (let i = 1; i <= 5; i++) pages.push(i);
+      pages.push('...');
+      pages.push(totalPaginas);
+    } else if (paginaAtual >= totalPaginas - 3) {
+      pages.push(1);
+      pages.push('...');
+      for (let i = totalPaginas - 4; i <= totalPaginas; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      pages.push('...');
+      pages.push(paginaAtual - 1);
+      pages.push(paginaAtual);
+      pages.push(paginaAtual + 1);
+      pages.push('...');
+      pages.push(totalPaginas);
+    }
+    return pages;
+  }
+
   async function viewPedidos() {
     const { pedidos } = await client.adminListarPedidos({ q: filtro.q });
     const main = $('main');
@@ -435,7 +461,7 @@
     }[filtro.periodo] || 'Período';
 
     const stat = (key, label, n) =>
-      el('div', { class: 'stat' + (filtro.status === key ? ' active' : ''), onclick: () => { filtro.status = key; viewPedidos(); } },
+      el('div', { class: 'stat' + (filtro.status === key ? ' active' : ''), onclick: () => { filtro.status = (filtro.status === key ? '' : key); paginacaoPedidos.pagina = 1; viewPedidos(); } },
         el('b', {}, String(n)), el('span', {}, label));
 
     const cardValor = el('div', { class: 'stat stat-valor', title: 'Valor total dos pedidos deste filtro' },
@@ -444,19 +470,19 @@
     );
 
     const busca = el('input', { type: 'search', placeholder: 'Buscar cliente, cidade, cód. ou nº', value: filtro.q });
-    busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') { filtro.q = busca.value.trim(); viewPedidos(); } });
+    busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') { filtro.q = busca.value.trim(); paginacaoPedidos.pagina = 1; viewPedidos(); } });
 
     const pill = (key, label) =>
       el('button', {
         type: 'button',
         class: 'btn-pill' + (filtro.periodo === key ? ' active' : ''),
-        onclick: () => { filtro.periodo = key; viewPedidos(); }
+        onclick: () => { filtro.periodo = key; paginacaoPedidos.pagina = 1; viewPedidos(); }
       }, label);
 
     const selectPeriodo = el('select', {
       class: 'periodo-select',
       style: 'border:1.5px solid #bbb;border-radius:8px;padding:7px 10px;font-size:13.5px;background:#fff;font-weight:600;cursor:pointer',
-      onchange: (e) => { filtro.periodo = e.target.value; viewPedidos(); }
+      onchange: (e) => { filtro.periodo = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     },
       el('option', { value: 'todos', selected: filtro.periodo === 'todos' }, '📅 Todo o histórico'),
       el('option', { value: 'hoje', selected: filtro.periodo === 'hoje' }, '📅 Hoje'),
@@ -474,14 +500,14 @@
       value: filtro.dataInicio,
       title: 'Data inicial',
       style: 'border:1.5px solid #bbb;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff',
-      onchange: (e) => { filtro.dataInicio = e.target.value; viewPedidos(); }
+      onchange: (e) => { filtro.dataInicio = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     });
     const inputDataFim = el('input', {
       type: 'date',
       value: filtro.dataFim,
       title: 'Data final',
       style: 'border:1.5px solid #bbb;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff',
-      onchange: (e) => { filtro.dataFim = e.target.value; viewPedidos(); }
+      onchange: (e) => { filtro.dataFim = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     });
 
     const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim)
@@ -491,10 +517,130 @@
         title: 'Limpar filtros',
         onclick: () => {
           filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
+          paginacaoPedidos.pagina = 1;
           viewPedidos();
         }
       }, '✕ Limpar')
       : null;
+
+    // Paginação e controle de limite de registros
+    const totalRegistros = pedidosExibidos.length;
+    const limite = parseInt(paginacaoPedidos.limite, 10) || 0;
+    let totalPaginas = 1;
+    let paginaAtual = 1;
+    let inicioIdx = 0;
+    let fimIdx = totalRegistros;
+    let pedidosPaginados = pedidosExibidos;
+
+    if (limite > 0) {
+      totalPaginas = Math.max(1, Math.ceil(totalRegistros / limite));
+      if (paginacaoPedidos.pagina > totalPaginas) paginacaoPedidos.pagina = totalPaginas;
+      if (paginacaoPedidos.pagina < 1) paginacaoPedidos.pagina = 1;
+      paginaAtual = paginacaoPedidos.pagina;
+      inicioIdx = (paginaAtual - 1) * limite;
+      fimIdx = Math.min(inicioIdx + limite, totalRegistros);
+      pedidosPaginados = pedidosExibidos.slice(inicioIdx, fimIdx);
+    }
+
+    function criarSelectLimite(sufixo = '') {
+      return el('select', {
+        class: 'paginacao-select',
+        id: 'select-limite' + sufixo,
+        title: 'Quantidade de registros por página',
+        onchange: (e) => {
+          paginacaoPedidos.limite = parseInt(e.target.value, 10);
+          paginacaoPedidos.pagina = 1;
+          viewPedidos();
+        }
+      },
+        el('option', { value: '10', selected: paginacaoPedidos.limite === 10 }, '10 por pág.'),
+        el('option', { value: '20', selected: paginacaoPedidos.limite === 20 }, '20 por pág.'),
+        el('option', { value: '30', selected: paginacaoPedidos.limite === 30 }, '30 por pág.'),
+        el('option', { value: '50', selected: paginacaoPedidos.limite === 50 }, '50 por pág.'),
+        el('option', { value: '100', selected: paginacaoPedidos.limite === 100 }, '100 por pág.'),
+        el('option', { value: '0', selected: paginacaoPedidos.limite === 0 }, 'Todos')
+      );
+    }
+
+    function irParaPagina(p) {
+      if (p < 1 || p > totalPaginas || p === paginacaoPedidos.pagina) return;
+      paginacaoPedidos.pagina = p;
+      viewPedidos();
+      const tbl = document.querySelector('.table-wrap');
+      if (tbl) {
+        const y = tbl.getBoundingClientRect().top + window.pageYOffset - 80;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }
+    }
+
+    let barraPaginacao = null;
+    if (totalRegistros > 0) {
+      const textoInfo = limite > 0
+        ? `Mostrando ${inicioIdx + 1}–${fimIdx} de ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}${totalPaginas > 1 ? ` (Página ${paginaAtual} de ${totalPaginas})` : ''}`
+        : `Mostrando todos os ${totalRegistros} pedidos`;
+
+      const listaNav = [];
+      if (totalPaginas > 1) {
+        listaNav.push(
+          el('button', {
+            type: 'button',
+            class: 'btn-pag',
+            title: 'Primeira página',
+            disabled: paginaAtual <= 1,
+            onclick: () => irParaPagina(1)
+          }, '«'),
+          el('button', {
+            type: 'button',
+            class: 'btn-pag',
+            title: 'Página anterior',
+            disabled: paginaAtual <= 1,
+            onclick: () => irParaPagina(paginaAtual - 1)
+          }, '‹ Anterior')
+        );
+
+        const pages = gerarBotoesPaginacao(paginaAtual, totalPaginas);
+        pages.forEach((p) => {
+          if (p === '...') {
+            listaNav.push(el('span', { class: 'btn-pag ellipsis' }, '…'));
+          } else {
+            listaNav.push(
+              el('button', {
+                type: 'button',
+                class: 'btn-pag' + (p === paginaAtual ? ' active' : ''),
+                title: `Página ${p}`,
+                onclick: () => irParaPagina(p)
+              }, String(p))
+            );
+          }
+        });
+
+        listaNav.push(
+          el('button', {
+            type: 'button',
+            class: 'btn-pag',
+            title: 'Próxima página',
+            disabled: paginaAtual >= totalPaginas,
+            onclick: () => irParaPagina(paginaAtual + 1)
+          }, 'Próxima ›'),
+          el('button', {
+            type: 'button',
+            class: 'btn-pag',
+            title: 'Última página',
+            disabled: paginaAtual >= totalPaginas,
+            onclick: () => irParaPagina(totalPaginas)
+          }, '»')
+        );
+      }
+
+      barraPaginacao = el('div', { class: 'paginacao-bar' },
+        el('div', { class: 'paginacao-info' }, el('b', {}, textoInfo)),
+        totalPaginas > 1 ? el('div', { class: 'paginacao-nav' }, ...listaNav) : null,
+        el('div', { class: 'paginacao-limite' },
+          el('span', {}, 'Limite:'),
+          criarSelectLimite('-bottom')
+        )
+      );
+    }
 
     main.replaceChildren(
       el('div', { class: 'cards' },
@@ -504,7 +650,7 @@
       ),
       el('div', { class: 'toolbar' },
         busca,
-        el('button', { class: 'btn secondary', onclick: () => { filtro.q = busca.value.trim(); viewPedidos(); } }, 'Buscar'),
+        el('button', { class: 'btn secondary', onclick: () => { filtro.q = busca.value.trim(); paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Buscar'),
         el('div', { class: 'periodo-pills' },
           pill('todos', 'Todos'),
           pill('semana_atual', 'Esta Semana'),
@@ -514,36 +660,45 @@
         ),
         btnLimpar,
         el('span', { class: 'grow' }),
+        el('div', { class: 'toolbar-limite', style: 'display:inline-flex;align-items:center;gap:6px' },
+          el('span', { style: 'font-size:13px;font-weight:600;color:#555;white-space:nowrap' }, 'Limite:'),
+          criarSelectLimite('-top')
+        ),
         el('button', { class: 'btn', onclick: () => guard(() => formPedido()) }, '+ Novo pedido')
       ),
       pedidosExibidos.length
-        ? el('div', { class: 'table-wrap' }, el('table', {},
-          el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
-          el('tbody', {}, pedidosExibidos.map((p) =>
-            el('tr', {},
-              el('td', {}, '#' + p.id),
-              el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
-              el('td', {}, p.cidade),
-              el('td', {}, p.data || fmtData(p.criado_em)),
-              el('td', {}, String(p.total_itens)),
-              el('td', {}, p.total > 0 ? brl(p.total) : '—'),
-              el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
-              el('td', { class: 'actions' },
-                el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
-                el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
-                el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
-                el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir'))))),
-          el('tfoot', {},
-            el('tr', { class: 'table-footer-row' },
-              el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:700' },
-                `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${pedidosExibidos.length} pedido${pedidosExibidos.length === 1 ? '' : 's'}`),
-              el('td', { style: 'padding:12px 14px;font-weight:700' }, `${totalItens} un.`),
-              el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:16px' }, brl(totalValor)),
-              el('td', { colspan: '2' }, '')))))
+        ? el('div', {},
+            el('div', { class: 'table-wrap' }, el('table', {},
+              el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
+              el('tbody', {}, pedidosPaginados.map((p) =>
+                el('tr', {},
+                  el('td', {}, '#' + p.id),
+                  el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
+                  el('td', {}, p.cidade),
+                  el('td', {}, p.data || fmtData(p.criado_em)),
+                  el('td', {}, String(p.total_itens)),
+                  el('td', {}, p.total > 0 ? brl(p.total) : '—'),
+                  el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
+                  el('td', { class: 'actions' },
+                    el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
+                    el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
+                    el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
+                    el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir'))))),
+              el('tfoot', {},
+                el('tr', { class: 'table-footer-row' },
+                  el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:700' },
+                    limite > 0 && totalPaginas > 1
+                      ? `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedidos (Mostrando ${inicioIdx + 1}–${fimIdx})`
+                      : `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
+                  el('td', { style: 'padding:12px 14px;font-weight:700' }, `${totalItens} un.`),
+                  el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:16px' }, brl(totalValor)),
+                  el('td', { colspan: '2' }, ''))))),
+            barraPaginacao
+          )
         : el('div', { class: 'table-wrap' },
           el('div', { class: 'empty', style: 'padding:32px 16px;text-align:center' },
             el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}".`),
-            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' }; viewPedidos(); } }, 'Ver todos os pedidos')))
+            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
     );
   }
 
