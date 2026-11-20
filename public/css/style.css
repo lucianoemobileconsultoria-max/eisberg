@@ -1000,6 +1000,110 @@ textarea {
   border-top: 2px solid #cbd5e1;
 }
 
+/* Aba DASHBOARD */
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dash-box {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.dash-grid .dash-box { margin-bottom: 0; }
+
+.dash-box h3 { margin: 0 0 4px; font-size: 16px; }
+
+.dash-hint { font-size: 12px; color: #6b7280; margin: 2px 0 6px; }
+
+.dash-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 260px;
+  overflow-x: auto;
+  padding: 26px 4px 4px;
+}
+
+.dash-col {
+  flex: 1 0 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 38px;
+  cursor: default;
+}
+
+.dash-bararea {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dash-barwrap { position: relative; width: 78%; margin: 0 auto; }
+
+.dash-bar {
+  display: flex;
+  flex-direction: column-reverse;
+  height: 100%;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.dash-val {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: #374151;
+  white-space: nowrap;
+  padding-bottom: 2px;
+  display: none;
+}
+
+.dash-chart.show-vals .dash-val,
+.dash-col:hover .dash-val { display: block; }
+
+.dash-col:hover .dash-bar { filter: brightness(1.12); }
+
+.dash-lbl { font-size: 11px; font-weight: 700; margin-top: 4px; white-space: nowrap; }
+
+.dash-sub { font-size: 10px; color: #6b7280; }
+
+.dash-st {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 6px;
+  cursor: pointer;
+  background: #f9fafb;
+}
+
+.dash-st.active { border-color: var(--red); background: #fff5f5; }
+
+.dash-st-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+
+.dash-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; }
+
+.dash-st-bar { height: 8px; background: #e5e7eb; border-radius: 6px; overflow: hidden; margin: 6px 0 2px; }
+
+.dash-st-bar > div { height: 100%; border-radius: 6px; }
+
 /* Aba DESPESAS */
 .stat.stat-despesa {
   background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);

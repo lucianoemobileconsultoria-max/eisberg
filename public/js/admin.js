@@ -283,6 +283,7 @@
   function carregar() {
     return guard(() => ({
       pedidos: viewPedidos,
+      dashboard: viewDashboard,
       produtos: viewProdutos,
       categorias: viewCategorias,
       mapa: viewMapa,
@@ -669,7 +670,7 @@
       const limite = new Date(agora);
       limite.setDate(agora.getDate() - 7);
       limite.setHours(0, 0, 0, 0);
-      return dt >= limite && dt <= agora;
+      return dt >= limite && dtNorm <= hojeNorm;
     }
 
     if (periodo === 'mes_atual') {
@@ -687,7 +688,7 @@
       const limite = new Date(agora);
       limite.setDate(agora.getDate() - 30);
       limite.setHours(0, 0, 0, 0);
-      return dt >= limite && dt <= agora;
+      return dt >= limite && dtNorm <= hojeNorm;
     }
 
     if (periodo === 'personalizado') {
@@ -1762,6 +1763,198 @@
         viewProdutos();
       },
     });
+  }
+
+  /* =================================================================
+     DASHBOARD (pedidos, status e valores por dia)
+     ================================================================= */
+  let dashFiltro = { periodo: 'mes_atual', status: '', dataInicio: '', dataFim: '' };
+  const DIAS_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const brl0 = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const dashIso = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const dashDia0 = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dashFmt = (d) => pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear();
+  const dashParseIso = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); };
+
+  // Intervalo (primeiro e último dia) do período escolhido, para preencher dias sem pedidos com zero.
+  function dashIntervalo(periodo, ini, fim, datas) {
+    const hoje = dashDia0(new Date());
+    const y = hoje.getFullYear(), m = hoje.getMonth(), d = hoje.getDate();
+    let s = null, e = null;
+    if (periodo === 'hoje') { s = e = hoje; }
+    else if (periodo === 'ontem') { s = e = new Date(y, m, d - 1); }
+    else if (periodo === 'semana_atual') { const w = getWeekRange(hoje); s = dashDia0(w.start); e = dashDia0(w.end); }
+    else if (periodo === 'semana_passada') { const w = getWeekRange(new Date(y, m, d - 7)); s = dashDia0(w.start); e = dashDia0(w.end); }
+    else if (periodo === '7dias') { s = new Date(y, m, d - 7); e = hoje; }
+    else if (periodo === '30dias') { s = new Date(y, m, d - 30); e = hoje; }
+    else if (periodo === 'mes_atual') { s = new Date(y, m, 1); e = new Date(y, m + 1, 0); }
+    else if (periodo === 'mes_passado') { s = new Date(y, m - 1, 1); e = new Date(y, m, 0); }
+    else if (periodo === 'personalizado') {
+      if (ini) s = dashParseIso(ini);
+      if (fim) e = dashParseIso(fim);
+    }
+    const ordenadas = datas.slice().sort((a, b) => a - b);
+    if (!s) s = ordenadas.length ? dashDia0(ordenadas[0]) : hoje;
+    if (!e) e = ordenadas.length ? dashDia0(ordenadas[ordenadas.length - 1]) : hoje;
+    if ((periodo === 'semana_atual' || periodo === 'mes_atual') && e > hoje) e = hoje; // não mostra dias futuros
+    if (e < s) e = s;
+    return { s, e };
+  }
+
+  async function viewDashboard(forcar) {
+    const pedidos = await obterPedidos(!!forcar);
+    const noPeriodo = pedidos.filter((p) => pedidoNoPeriodo(p, dashFiltro.periodo, dashFiltro.dataInicio, dashFiltro.dataFim));
+    const lista = noPeriodo.filter((p) => !dashFiltro.status || p.status === dashFiltro.status);
+
+    const datas = noPeriodo.map(parsePedidoDate).filter(Boolean);
+    const { s, e } = dashIntervalo(dashFiltro.periodo, dashFiltro.dataInicio, dashFiltro.dataFim, datas);
+    const nDias = Math.round((e - s) / 86400000) + 1;
+    const mensal = nDias > 62;
+
+    // Buckets (dia a dia, ou mês a mês quando o período é muito longo)
+    const buckets = [];
+    const mapaB = new Map();
+    const novoBucket = (key, label, sub, titulo) => {
+      const b = { key, label, sub, titulo, pedidos: 0, itens: 0, valor: 0, st: {}, stN: {} };
+      Object.keys(STATUS).forEach((k) => { b.st[k] = 0; b.stN[k] = 0; });
+      buckets.push(b); mapaB.set(key, b); return b;
+    };
+    if (mensal) {
+      for (let c = new Date(s.getFullYear(), s.getMonth(), 1); c <= e; c = new Date(c.getFullYear(), c.getMonth() + 1, 1)) {
+        novoBucket(c.getFullYear() + '-' + pad2(c.getMonth() + 1), MESES_ABREV[c.getMonth()], String(c.getFullYear()).slice(2),
+          MESES_NOMES[c.getMonth()] + '/' + c.getFullYear());
+      }
+    } else {
+      for (let i = 0; i < nDias; i++) {
+        const c = new Date(s.getFullYear(), s.getMonth(), s.getDate() + i);
+        novoBucket(dashIso(c), pad2(c.getDate()) + '/' + pad2(c.getMonth() + 1), DIAS_SEM[c.getDay()], dashFmt(c) + ' (' + DIAS_SEM[c.getDay()] + ')');
+      }
+    }
+    let semData = 0;
+    lista.forEach((p) => {
+      const dt = parsePedidoDate(p);
+      if (!dt) { semData++; return; }
+      const key = mensal ? dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) : dashIso(dt);
+      const b = mapaB.get(key);
+      if (!b) return;
+      b.pedidos++;
+      b.itens += Number(p.total_itens || 0);
+      b.valor += Number(p.total || 0);
+      if (b.st[p.status] !== undefined) { b.st[p.status] += Number(p.total || 0); b.stN[p.status]++; }
+    });
+
+    const totalValor = lista.reduce((a, p) => a + Number(p.total || 0), 0);
+    const totalItens = lista.reduce((a, p) => a + Number(p.total_itens || 0), 0);
+    const ticket = lista.length ? totalValor / lista.length : 0;
+    const comPedidos = buckets.filter((b) => b.pedidos > 0);
+    const melhor = comPedidos.reduce((m, b) => (!m || b.valor > m.valor ? b : m), null);
+    const maxValor = Math.max(1, ...buckets.map((b) => b.valor));
+
+    // ---- Cabeçalho com filtros ----
+    const rotulos = {
+      todos: 'Todo o histórico', hoje: 'Hoje', ontem: 'Ontem', semana_atual: 'Esta semana', semana_passada: 'Semana passada',
+      '7dias': 'Últimos 7 dias', mes_atual: 'Este mês', mes_passado: 'Mês passado', '30dias': 'Últimos 30 dias', personalizado: 'Escolher datas...',
+    };
+    const refrescar = () => { viewDashboard(); };
+    const pill = (key, label) => el('button', {
+      type: 'button', class: 'btn-pill' + (dashFiltro.periodo === key ? ' active' : ''),
+      onclick: () => { dashFiltro.periodo = key; refrescar(); },
+    }, label);
+    const selPer = el('select', { onchange: (ev) => { dashFiltro.periodo = ev.target.value; refrescar(); } },
+      Object.entries(rotulos).map(([k, v]) => el('option', { value: k, selected: dashFiltro.periodo === k }, '📅 ' + v)));
+    const selStatus = el('select', { onchange: (ev) => { dashFiltro.status = ev.target.value; refrescar(); } },
+      el('option', { value: '', selected: !dashFiltro.status }, 'Todos os status'),
+      Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: dashFiltro.status === k }, v)));
+    const dateStyle = 'border:1.5px solid #bbb;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff';
+    const inpIni = el('input', { type: 'date', value: dashFiltro.dataInicio, title: 'Data inicial', style: dateStyle, onchange: (ev) => { dashFiltro.dataInicio = ev.target.value; refrescar(); } });
+    const inpFim = el('input', { type: 'date', value: dashFiltro.dataFim, title: 'Data final', style: dateStyle, onchange: (ev) => { dashFiltro.dataFim = ev.target.value; refrescar(); } });
+    const filtrado = dashFiltro.periodo !== 'mes_atual' || dashFiltro.status;
+
+    // ---- Cards ----
+    const card = (valor, rotulo, extra) => el('div', { class: 'stat', style: 'cursor:default' },
+      el('b', { style: 'font-size:22px;white-space:nowrap' }, valor), el('span', {}, rotulo), extra || null);
+    const cards = el('div', { class: 'cards' },
+      el('div', { class: 'stat stat-valor', title: 'Soma dos pedidos do filtro' },
+        el('b', { style: 'white-space:nowrap' }, brl(totalValor)), el('span', {}, '💰 Total em Valor')),
+      card(String(lista.length), 'Pedidos'),
+      card(brl(ticket), 'Ticket médio'),
+      card(String(totalItens), 'Unidades vendidas'),
+      card(melhor ? brl(melhor.valor) : '—', melhor ? `Melhor ${mensal ? 'mês' : 'dia'}: ${melhor.titulo}` : 'Melhor dia'));
+
+    // ---- Status ----
+    const porStatus = {};
+    Object.keys(STATUS).forEach((k) => { porStatus[k] = { n: 0, valor: 0 }; });
+    noPeriodo.forEach((p) => { if (porStatus[p.status]) { porStatus[p.status].n++; porStatus[p.status].valor += Number(p.total || 0); } });
+    const totalPer = noPeriodo.reduce((a, p) => a + Number(p.total || 0), 0);
+    const blocoStatus = el('div', { class: 'dash-box' },
+      el('h3', {}, '📌 Pedidos por status'),
+      el('p', { class: 'dash-hint' }, 'Clique em um status para filtrar o dashboard.'),
+      Object.entries(STATUS).map(([k, nome]) => {
+        const st = porStatus[k];
+        const pct = totalPer > 0 ? (st.valor / totalPer) * 100 : 0;
+        return el('div', { class: 'dash-st' + (dashFiltro.status === k ? ' active' : ''), onclick: () => { dashFiltro.status = dashFiltro.status === k ? '' : k; refrescar(); } },
+          el('div', { class: 'dash-st-top' },
+            el('span', {}, el('i', { class: 'dash-dot', style: 'background:' + MAPA_CORES[k] }), el('b', {}, nome)),
+            el('span', {}, `${st.n} pedido${st.n === 1 ? '' : 's'} • `, el('b', {}, brl(st.valor)))),
+          el('div', { class: 'dash-st-bar' }, el('div', { style: `width:${pct.toFixed(1)}%;background:${MAPA_CORES[k]}` })),
+          el('div', { class: 'dash-hint' }, `${pct.toFixed(1).replace('.', ',')}% do valor do período`));
+      }));
+
+    // ---- Gráfico: valor por dia (barras empilhadas por status) ----
+    const mostrarValores = buckets.length <= 14;
+    const grafico = el('div', { class: 'dash-chart' + (mostrarValores ? ' show-vals' : '') },
+      buckets.map((b) => {
+        const tip = `${b.titulo}\nTotal: ${brl(b.valor)} • ${b.pedidos} pedido${b.pedidos === 1 ? '' : 's'}` +
+          Object.entries(STATUS).filter(([k]) => b.stN[k]).map(([k, nome]) => `\n${nome}: ${b.stN[k]} (${brl(b.st[k])})`).join('');
+        const alt = b.valor > 0 ? Math.max(2, (b.valor / maxValor) * 100) : 0;
+        return el('div', { class: 'dash-col', title: tip },
+          el('div', { class: 'dash-bararea' },
+            el('div', { class: 'dash-barwrap', style: `height:${alt}%` },
+              b.valor > 0 ? el('div', { class: 'dash-val' }, brl0(b.valor)) : null,
+              el('div', { class: 'dash-bar' }, Object.keys(STATUS).filter((k) => b.st[k] > 0).map((k) =>
+                el('div', { style: `height:${(b.st[k] / b.valor) * 100}%;background:${MAPA_CORES[k]}` }))))),
+          el('div', { class: 'dash-lbl' }, b.label), el('div', { class: 'dash-sub' }, b.sub));
+      }));
+    const legenda = el('div', { class: 'mapa-legenda', style: 'margin:8px 0 0' },
+      Object.entries(STATUS).map(([k, v]) => el('span', {}, el('i', { style: 'background:' + MAPA_CORES[k] }), v)));
+    const blocoGrafico = el('div', { class: 'dash-box' },
+      el('h3', {}, mensal ? '📈 Valor por mês' : '📈 Valor por dia'),
+      el('p', { class: 'dash-hint' }, `${dashFmt(s)} a ${dashFmt(e)}${dashFiltro.status ? ' • ' + STATUS[dashFiltro.status] : ''} — passe o mouse (ou toque) na barra para ver os detalhes.`),
+      grafico, legenda);
+
+    // ---- Tabela resumo por dia ----
+    const linhas = comPedidos.slice().reverse();
+    const blocoTabela = el('div', { class: 'dash-box' },
+      el('h3', {}, mensal ? '🗓️ Resumo por mês' : '🗓️ Resumo por dia'),
+      linhas.length
+        ? el('div', { class: 'table-wrap', style: 'box-shadow:none;border:1px solid #eee' }, el('table', { style: 'min-width:420px' },
+          el('thead', {}, el('tr', {}, ...[mensal ? 'Mês' : 'Dia', 'Pedidos', 'Unidades', 'Valor', 'Ticket médio'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, linhas.map((b) => el('tr', {},
+            el('td', {}, el('b', {}, b.titulo)), el('td', {}, String(b.pedidos)), el('td', {}, String(b.itens)),
+            el('td', { style: 'font-weight:700;white-space:nowrap' }, brl(b.valor)), el('td', { style: 'white-space:nowrap' }, brl(b.valor / b.pedidos))))),
+          el('tfoot', {}, el('tr', { class: 'table-footer-row' },
+            el('td', { style: 'padding:12px 14px;font-weight:800' }, 'Total'),
+            el('td', { style: 'padding:12px 14px;font-weight:800' }, String(lista.length)),
+            el('td', { style: 'padding:12px 14px;font-weight:800' }, String(totalItens)),
+            el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;white-space:nowrap' }, brl(totalValor)),
+            el('td', { style: 'padding:12px 14px;font-weight:800;white-space:nowrap' }, brl(ticket))))))
+        : el('div', { class: 'empty' }, 'Nenhum pedido neste filtro.'),
+      semData ? el('p', { class: 'dash-hint' }, `${semData} pedido(s) sem data não aparecem por dia.`) : null);
+
+    $('main').replaceChildren(
+      el('div', { class: 'toolbar' },
+        el('h2', { style: 'margin:0 8px 0 0;font-size:20px' }, '📊 Dashboard'),
+        el('div', { class: 'periodo-pills' }, pill('hoje', 'Hoje'), pill('semana_atual', 'Esta Semana'), pill('mes_atual', 'Este Mês'), pill('todos', 'Todos'), selPer,
+          dashFiltro.periodo === 'personalizado' ? el('div', { style: 'display:inline-flex;gap:4px;align-items:center' }, el('span', { style: 'font-size:12px' }, 'De:'), inpIni, el('span', { style: 'font-size:12px' }, 'Até:'), inpFim) : null),
+        selStatus,
+        (filtrado ? el('button', { class: 'btn sm secondary', onclick: () => { dashFiltro = { periodo: 'mes_atual', status: '', dataInicio: '', dataFim: '' }; refrescar(); } }, '✕ Limpar') : null),
+        el('span', { class: 'grow' }),
+        el('button', { class: 'btn secondary', title: 'Buscar pedidos novos no banco', onclick: () => guard(() => viewDashboard(true)) }, '🔄 Atualizar')),
+      cards,
+      el('div', { class: 'dash-grid' }, blocoGrafico, blocoStatus),
+      blocoTabela);
   }
 
   /* =================================================================
