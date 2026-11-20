@@ -280,8 +280,206 @@
       pedidos: viewPedidos,
       produtos: viewProdutos,
       categorias: viewCategorias,
+      mapa: viewMapa,
       empresa: viewEmpresa,
     }[tab]()));
+  }
+
+  /* =================================================================
+     MAPA - Leaflet + OpenStreetMap (tiles) + Nominatim (geocodificação)
+     Tudo 100% gratuito, sem chave de API.
+     ================================================================= */
+  const MAPA_GEO_KEY = 'eisberg_geocache_v1';
+  const MAPA_CORES = { novo: '#d9141e', em_producao: '#f59e0b', entregue: '#16a34a', cancelado: '#6b7280' };
+  const MAPA_PRIORIDADE = ['novo', 'em_producao', 'entregue', 'cancelado'];
+  let mapaFiltro = { status: '', periodo: 'todos' };
+  let mapaInst = null;
+  let mapaRun = 0;
+  let leafletPromise = null;
+
+  function mapaCarregarLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.onload = () => resolve();
+      s.onerror = () => { leafletPromise = null; reject(new Error('Não foi possível carregar o mapa. Verifique a internet.')); };
+      document.head.appendChild(s);
+    });
+    return leafletPromise;
+  }
+
+  function mapaLerCache() {
+    try { return JSON.parse(localStorage.getItem(MAPA_GEO_KEY)) || {}; } catch (_) { return {}; }
+  }
+  function mapaSalvarCache(c) {
+    try { localStorage.setItem(MAPA_GEO_KEY, JSON.stringify(c)); } catch (_) { }
+  }
+  const mapaNorm = (s) => String(s || '').trim().replace(/\s+/g, ' ');
+  const mapaEsperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function mapaNominatim(q) {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&q=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error('Geocodificação falhou (' + r.status + ')');
+    const j = await r.json();
+    return j && j[0] ? { lat: parseFloat(j[0].lat), lng: parseFloat(j[0].lon) } : null;
+  }
+
+  // Retorna { pos, doCache } ; pos = {lat,lng,approx} | null (endereço não encontrado)
+  async function mapaGeocodificar(endereco, cidade, cache, key) {
+    if (cache[key] !== undefined) return { pos: cache[key].miss ? null : cache[key], doCache: true };
+    let achou = null;
+    if (endereco) {
+      achou = await mapaNominatim([endereco, cidade, 'Brasil'].filter(Boolean).join(', '));
+      if (achou) achou.approx = false;
+      if (!achou && cidade) { await mapaEsperar(1100); }
+    }
+    if (!achou && cidade) {
+      achou = await mapaNominatim(cidade + ', Brasil');
+      if (achou) achou.approx = true;
+    }
+    cache[key] = achou || { miss: true, t: Date.now() };
+    mapaSalvarCache(cache);
+    return { pos: achou, doCache: false };
+  }
+
+  async function viewMapa() {
+    const run = ++mapaRun;
+    if (mapaInst) { try { mapaInst.remove(); } catch (_) { } mapaInst = null; }
+
+    const statusTxt = el('span', { class: 'mapa-status' }, 'Carregando pedidos...');
+    const selStatus = el('select', { onchange: (e) => { mapaFiltro.status = e.target.value; viewMapa(); } },
+      el('option', { value: '', selected: !mapaFiltro.status }, 'Todos os status'),
+      Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: mapaFiltro.status === k }, v)));
+    const periodos = [
+      ['todos', 'Todo o histórico'], ['hoje', 'Hoje'], ['ontem', 'Ontem'], ['semana_atual', 'Esta semana'],
+      ['semana_passada', 'Semana passada'], ['mes_atual', 'Este mês'], ['mes_passado', 'Mês passado'], ['30dias', 'Últimos 30 dias'],
+    ];
+    const selPer = el('select', { onchange: (e) => { mapaFiltro.periodo = e.target.value; viewMapa(); } },
+      periodos.map(([k, v]) => el('option', { value: k, selected: mapaFiltro.periodo === k }, '📅 ' + v)));
+    const legenda = el('div', { class: 'mapa-legenda' },
+      Object.entries(STATUS).map(([k, v]) => el('span', {}, el('i', { style: 'background:' + MAPA_CORES[k] }), v)));
+    const canvas = el('div', { id: 'mapa-pedidos', class: 'mapa-canvas' });
+
+    $('main').replaceChildren(
+      el('div', { class: 'toolbar' },
+        selStatus, selPer,
+        el('button', { class: 'btn secondary', onclick: () => viewMapa() }, '🔄 Atualizar'),
+        el('span', { class: 'grow' }),
+        legenda),
+      el('div', { class: 'mapa-info' }, statusTxt),
+      el('div', { class: 'mapa-wrap' }, canvas));
+
+    const [{ pedidos }] = await Promise.all([client.adminListarPedidos({}), mapaCarregarLeaflet()]);
+    if (run !== mapaRun || tab !== 'mapa') return;
+
+    const lista = pedidos
+      .filter((p) => pedidoNoPeriodo(p, mapaFiltro.periodo, '', ''))
+      .filter((p) => !mapaFiltro.status || p.status === mapaFiltro.status);
+
+    const L = window.L;
+    const map = L.map(canvas).setView([-14.2, -51.9], 4);
+    mapaInst = map;
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+    }).addTo(map);
+
+    // Agrupa pedidos pelo endereço (uma única consulta por endereço)
+    const porEndereco = new Map();
+    let semEndereco = 0;
+    lista.forEach((p) => {
+      const end = mapaNorm(p.endereco);
+      const cid = mapaNorm(p.cidade);
+      if (!end && !cid) { semEndereco++; return; }
+      const key = (end + '|' + cid).toLowerCase();
+      if (!porEndereco.has(key)) porEndereco.set(key, { end, cid, pedidos: [] });
+      porEndereco.get(key).pedidos.push(p);
+    });
+
+    // Grupos por coordenada (vários pedidos no mesmo ponto = um alfinete)
+    const grupos = new Map();
+    const bounds = [];
+    let encontrados = 0, naoEncontrados = 0, feitos = 0;
+    const total = porEndereco.size;
+    const atualizarTxt = (fim) => {
+      const partes = [`📍 ${lista.length} pedido${lista.length === 1 ? '' : 's'} no filtro`];
+      partes.push(`${encontrados} endereço${encontrados === 1 ? '' : 's'} no mapa`);
+      if (naoEncontrados) partes.push(`${naoEncontrados} não localizado${naoEncontrados === 1 ? '' : 's'}`);
+      if (semEndereco) partes.push(`${semEndereco} sem endereço`);
+      if (!fim) partes.push(`⏳ localizando ${feitos}/${total}...`);
+      statusTxt.textContent = partes.join(' • ');
+    };
+
+    const montarPopup = (g) => {
+      const wrap = el('div', { class: 'mapa-popup' },
+        el('div', { class: 'mapa-popup-end' }, g.rotulo),
+        g.approx ? el('div', { class: 'mapa-popup-aprox' }, '⚠ Localização aproximada (somente a cidade)') : null,
+        g.pedidos.map((p) => el('div', { class: 'mapa-popup-ped' },
+          el('div', {}, el('b', {}, `#${p.id} ${p.cliente || ''}`), ' ', el('span', { class: 'badge ' + p.status }, STATUS[p.status] || p.status)),
+          el('div', { class: 'mapa-popup-sub' }, `${p.data || fmtData(p.criado_em)} • ${p.total > 0 ? brl(p.total) : 'sem valor'}${p.endereco ? ' • ' + p.endereco : ''}`),
+          el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver pedido'))),
+        el('a', {
+          class: 'btn sm', target: '_blank', rel: 'noopener noreferrer',
+          href: `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lng}`,
+          style: 'display:inline-block;margin-top:6px',
+        }, '🧭 Traçar rota'));
+      return wrap;
+    };
+
+    const desenharGrupo = (g) => {
+      const st = MAPA_PRIORIDADE.find((s) => g.pedidos.some((p) => p.status === s)) || 'novo';
+      const n = g.pedidos.length;
+      const icon = L.divIcon({
+        className: 'mapa-pin-wrap',
+        html: `<div class="mapa-pin" style="--c:${MAPA_CORES[st]}"><span>${n > 1 ? n : ''}</span></div>`,
+        iconSize: [30, 30], iconAnchor: [15, 36], popupAnchor: [0, -34],
+      });
+      if (g.marker) map.removeLayer(g.marker);
+      g.marker = L.marker([g.lat, g.lng], { icon, title: g.rotulo }).addTo(map).bindPopup(montarPopup(g), { maxWidth: 320 });
+    };
+
+    atualizarTxt(false);
+    const cache = mapaLerCache();
+    for (const [key, item] of porEndereco) {
+      if (run !== mapaRun || tab !== 'mapa') return;
+      let r = null;
+      let veioDoCache = cache[key] !== undefined;
+      try {
+        r = await mapaGeocodificar(item.end, item.cid, cache, key);
+      } catch (_) {
+        r = { pos: null, doCache: true, erro: true };
+      }
+      feitos++;
+      if (r.pos) {
+        encontrados++;
+        const ck = r.pos.lat.toFixed(5) + ',' + r.pos.lng.toFixed(5);
+        let g = grupos.get(ck);
+        if (!g) {
+          g = { lat: r.pos.lat, lng: r.pos.lng, approx: !!r.pos.approx, pedidos: [], rotulo: [item.end, item.cid].filter(Boolean).join(' - ') };
+          grupos.set(ck, g);
+          bounds.push([g.lat, g.lng]);
+        } else if (g.approx && !r.pos.approx) {
+          g.approx = false;
+        }
+        g.pedidos.push(...item.pedidos);
+        desenharGrupo(g);
+        if (bounds.length === 1) map.setView(bounds[0], 15);
+        else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      } else {
+        naoEncontrados++;
+      }
+      atualizarTxt(feitos >= total);
+      if (!veioDoCache && feitos < total) await mapaEsperar(1100); // limite do Nominatim: 1 consulta/seg
+    }
+    atualizarTxt(true);
+    if (!total) statusTxt.textContent = '📍 Nenhum pedido com endereço neste filtro.';
   }
 
   /* =================================================================
@@ -785,7 +983,7 @@
         await client.excluirPedido(p.id, senha);
         toast('Pedido excluído');
         closeModal();
-        viewPedidos();
+        carregar();
       },
     });
   }
@@ -795,7 +993,7 @@
       await client.adminAtualizarStatus(id, status);
       toast('Status atualizado');
       verPedido(id);
-      viewPedidos();
+      carregar();
     });
   }
 
@@ -1274,7 +1472,7 @@
       await client.adminSalvarPedido(id || null, body);
       toast('Pedido salvo');
       closeModal();
-      viewPedidos();
+      carregar();
     });
 
     openModal(id ? 'Editar pedido #' + id : 'Novo pedido', el('div', {},

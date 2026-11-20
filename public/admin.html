@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="img/icon-192.png">
   <link rel="apple-touch-icon" href="img/icon-192.png">
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
   <!-- Login -->
@@ -50,6 +50,7 @@
     </header>
     <nav class="tabs" id="tabs">
       <button data-tab="pedidos" class="active">Pedidos</button>
+      <button data-tab="mapa">🗺️ Mapa</button>
       <button data-tab="produtos">Produtos</button>
       <button data-tab="categorias">Categorias</button>
       <button data-tab="empresa">⚙️ Dados da Empresa</button>
@@ -58,12 +59,12 @@
   </div>
 
   <div id="modal-root"></div>
-  <script src="js/supabase-client.js?v=16"></script>
-  <script src="js/admin.js?v=16"></script>
+  <script src="js/supabase-client.js?v=17"></script>
+  <script src="js/admin.js?v=17"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=16').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=17').then((reg) => {
           reg.update();
         }).catch(console.error);
       });
