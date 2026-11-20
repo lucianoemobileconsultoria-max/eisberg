@@ -1000,6 +1000,23 @@ textarea {
   border-top: 2px solid #cbd5e1;
 }
 
+/* Aba DESPESAS */
+.stat.stat-despesa {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border: 2px solid #fca5a5;
+  cursor: default;
+}
+
+.stat.stat-despesa b {
+  color: #b91c1c;
+  font-size: 24px;
+}
+
+.stat.stat-despesa span {
+  color: #991b1b;
+  font-weight: 700;
+}
+
 /* Aba MAPA */
 .mapa-wrap {
   position: relative;

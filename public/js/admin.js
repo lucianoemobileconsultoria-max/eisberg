@@ -151,6 +151,7 @@
             el('li', {}, `${backup.resumo.total_categorias} Categorias`),
             el('li', {}, `${backup.resumo.total_produtos} Produtos cadastrados (preços, unidades e status)`),
             el('li', {}, `${backup.resumo.total_pedidos} Pedidos completos (com todos os itens)`),
+            backup.resumo.total_despesas ? el('li', {}, `${backup.resumo.total_despesas} Despesas registradas`) : null,
             el('li', {}, `Configurações da empresa (${backup.configuracoes.nome_empresa || 'EISBERG'}, telefone e WhatsApp)`)
           )
         ),
@@ -218,6 +219,7 @@
     }
     sessionStorage.removeItem('eisberg_sb_token');
     invalidarPedidosCache();
+    despesasCache = { rows: null, t: 0 };
     mapaUI.completo = false;
     mostrar();
     if (expirou) toast('Sessão expirada. Entre novamente.', true);
@@ -284,6 +286,7 @@
       produtos: viewProdutos,
       categorias: viewCategorias,
       mapa: viewMapa,
+      despesas: viewDespesas,
       empresa: viewEmpresa,
     }[tab]()));
   }
@@ -1757,6 +1760,223 @@
         await client.excluirProduto(p.id, senha);
         toast('Produto excluído');
         viewProdutos();
+      },
+    });
+  }
+
+  /* =================================================================
+     DESPESAS / GASTOS
+     ================================================================= */
+  const FORMAS_PGTO = { dinheiro: '💵 Dinheiro', pix: '⚡ PIX', cartao: '💳 Cartão' };
+  const DESPESAS_SQL = `create table if not exists public.despesas (
+  id               bigint generated always as identity primary key,
+  data             date          not null default current_date,
+  descricao        text          not null check (char_length(btrim(descricao)) between 1 and 200),
+  valor            numeric(12,2) not null check (valor >= 0),
+  forma_pagamento  text          not null default 'dinheiro'
+                                 check (forma_pagamento in ('dinheiro', 'pix', 'cartao')),
+  data_pagamento   date,
+  parcelas         integer       not null default 1 check (parcelas between 1 and 48),
+  criado_em        timestamptz   not null default now()
+);
+create index if not exists despesas_data_idx on public.despesas (data desc, id desc);
+alter table public.despesas enable row level security;
+drop policy if exists despesas_select on public.despesas;
+drop policy if exists despesas_insert on public.despesas;
+drop policy if exists despesas_update on public.despesas;
+create policy despesas_select on public.despesas for select using (public.is_admin());
+create policy despesas_insert on public.despesas for insert with check (public.is_admin());
+create policy despesas_update on public.despesas for update using (public.is_admin()) with check (public.is_admin());
+create or replace function public.excluir_despesa(p_id bigint, p_senha text)
+returns void
+language plpgsql security definer
+set search_path = public
+as $$
+begin
+  perform public._checar_exclusao(p_senha);
+  delete from public.despesas where id = p_id;
+  if not found then raise exception 'Despesa não encontrada'; end if;
+end;
+$$;
+revoke all on public.despesas from anon, authenticated;
+grant select, insert, update on public.despesas to authenticated;
+revoke execute on function public.excluir_despesa(bigint, text) from public;
+grant  execute on function public.excluir_despesa(bigint, text) to authenticated;`;
+  const SQL_EDITOR_URL = 'https://supabase.com/dashboard/project/wibqizlxrwiovgkynprj/sql/66105b49-93b9-49c8-b59e-af92eb40377a';
+
+  let despesasFiltro = { periodo: 'mes_atual', forma: '' };
+  let despesasCache = { rows: null, t: 0 };
+
+  const hojeISO = () => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+  function invalidarDespesasCache() { despesasCache = { rows: null, t: 0 }; }
+  async function obterDespesas(forcar) {
+    if (!forcar && despesasCache.rows && Date.now() - despesasCache.t < PEDIDOS_TTL_MS) return despesasCache.rows;
+    const rows = await client.adminListarDespesas();
+    despesasCache = { rows, t: Date.now() };
+    return rows;
+  }
+  const despesasSemTabela = (e) => {
+    const msg = (e && e.message) || '';
+    return /despesas/i.test(msg) && (e.status === 404 || /schema cache|does not exist|permission denied|not find/i.test(msg));
+  };
+
+  function telaSetupDespesas() {
+    const pre = el('textarea', { readonly: '', rows: '14', style: 'width:100%;font-family:Consolas,monospace;font-size:12px;border:1.5px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc' });
+    pre.value = DESPESAS_SQL;
+    $('main').replaceChildren(el('div', { style: 'max-width:760px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,.1)' },
+      el('h3', { style: 'margin:0 0 8px;color:var(--red);font-size:22px' }, '💸 Ativar o registro de despesas'),
+      el('p', { style: 'color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 12px' },
+        'Para guardar as despesas é preciso criar uma tabela nova no banco (uma única vez). Ela não altera nada do que você já tem (pedidos, produtos, categorias).'),
+      el('ol', { style: 'font-size:14px;line-height:1.7;margin:0 0 12px 18px;padding:0' },
+        el('li', {}, 'Clique em ', el('b', {}, '📋 Copiar SQL'), '.'),
+        el('li', {}, 'Abra o ', el('a', { href: SQL_EDITOR_URL, target: '_blank', rel: 'noopener noreferrer', style: 'color:var(--red);font-weight:700' }, 'SQL Editor do Supabase'), ', cole e clique em ', el('b', {}, 'Run'), '.'),
+        el('li', {}, 'Volte aqui e clique em ', el('b', {}, '✅ Já executei'), '.')),
+      pre,
+      el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px' },
+        el('button', { class: 'btn secondary', onclick: async () => { try { await navigator.clipboard.writeText(DESPESAS_SQL); } catch (_) { pre.select(); document.execCommand('copy'); } toast('SQL copiado!'); } }, '📋 Copiar SQL'),
+        el('button', { class: 'btn', onclick: () => viewDespesas(true).catch((e) => toast(e.message || 'Erro', true)) }, '✅ Já executei'))));
+  }
+
+  async function viewDespesas(forcar) {
+    let todas;
+    try {
+      todas = await obterDespesas(!!forcar);
+    } catch (e) {
+      if (despesasSemTabela(e)) return telaSetupDespesas();
+      throw e;
+    }
+
+    const noPeriodo = todas.filter((d) => pedidoNoPeriodo(d, despesasFiltro.periodo, '', ''));
+    const lista = noPeriodo.filter((d) => !despesasFiltro.forma || d.forma_pagamento === despesasFiltro.forma);
+    const soma = (arr) => arr.reduce((a, d) => a + Number(d.valor || 0), 0);
+    const total = soma(lista);
+    const porForma = (f) => noPeriodo.filter((d) => d.forma_pagamento === f);
+
+    const stat = (key, label, valor, n) =>
+      el('div', { class: 'stat' + (despesasFiltro.forma === key ? ' active' : ''), onclick: () => { despesasFiltro.forma = (despesasFiltro.forma === key ? '' : key); viewDespesas(); } },
+        el('b', { style: 'font-size:22px;white-space:nowrap' }, brl(valor)), el('span', {}, `${label} (${n})`));
+
+    const cardTotal = el('div', { class: 'stat stat-despesa', title: 'Total das despesas do filtro' },
+      el('b', { style: 'white-space:nowrap' }, brl(total)),
+      el('span', {}, `💸 Total de despesas (${lista.length} registro${lista.length === 1 ? '' : 's'})`));
+
+    const pill = (key, label) => el('button', {
+      type: 'button', class: 'btn-pill' + (despesasFiltro.periodo === key ? ' active' : ''),
+      onclick: () => { despesasFiltro.periodo = key; viewDespesas(); },
+    }, label);
+    const periodos = [['todos', 'Todo o histórico'], ['hoje', 'Hoje'], ['ontem', 'Ontem'], ['semana_atual', 'Esta semana'],
+      ['semana_passada', 'Semana passada'], ['mes_atual', 'Este mês'], ['mes_passado', 'Mês passado'], ['30dias', 'Últimos 30 dias']];
+    const selPer = el('select', { onchange: (e) => { despesasFiltro.periodo = e.target.value; viewDespesas(); } },
+      periodos.map(([k, v]) => el('option', { value: k, selected: despesasFiltro.periodo === k }, '📅 ' + v)));
+
+    const detalheCartao = (d) => {
+      if (d.forma_pagamento !== 'cartao') return '—';
+      const n = d.parcelas || 1;
+      const parc = n > 1 ? `${n}x de ${brl(Number(d.valor) / n)}` : '1x (à vista)';
+      return `${parc}${d.data_pagamento ? ' • pgto ' + fmtData(d.data_pagamento) : ''}`;
+    };
+
+    $('main').replaceChildren(
+      el('div', { class: 'cards' },
+        cardTotal,
+        stat('dinheiro', FORMAS_PGTO.dinheiro, soma(porForma('dinheiro')), porForma('dinheiro').length),
+        stat('pix', FORMAS_PGTO.pix, soma(porForma('pix')), porForma('pix').length),
+        stat('cartao', FORMAS_PGTO.cartao, soma(porForma('cartao')), porForma('cartao').length)),
+      el('div', { class: 'toolbar' },
+        el('div', { class: 'periodo-pills' }, pill('hoje', 'Hoje'), pill('semana_atual', 'Esta Semana'), pill('mes_atual', 'Este Mês'), pill('todos', 'Todos'), selPer),
+        (despesasFiltro.forma ? el('button', { class: 'btn sm secondary', onclick: () => { despesasFiltro.forma = ''; viewDespesas(); } }, '✕ Limpar forma') : null),
+        el('span', { class: 'grow' }),
+        el('button', { class: 'btn secondary', title: 'Recarregar do banco', onclick: () => guard(() => viewDespesas(true)) }, '🔄 Atualizar'),
+        el('button', { class: 'btn', onclick: () => formDespesa() }, '+ Nova despesa')),
+      lista.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+          el('thead', {}, el('tr', {}, ...['Data', 'Descrição', 'Forma', 'Valor', 'Cartão (parcelas / pagamento)', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, lista.map((d) => el('tr', {},
+            el('td', {}, fmtData(d.data)),
+            el('td', {}, el('b', {}, d.descricao)),
+            el('td', {}, FORMAS_PGTO[d.forma_pagamento] || d.forma_pagamento),
+            el('td', { style: 'font-weight:700;white-space:nowrap' }, brl(d.valor)),
+            el('td', {}, detalheCartao(d)),
+            el('td', { class: 'actions' },
+              el('button', { class: 'btn sm secondary', onclick: () => formDespesa(d) }, 'Editar'),
+              el('button', { class: 'btn sm danger', onclick: () => excluirDespesa(d) }, 'Excluir')))),
+          ),
+          el('tfoot', {}, el('tr', { class: 'table-footer-row' },
+            el('td', { colspan: '3', style: 'padding:12px 14px;font-weight:800' }, `Total (${lista.length} registro${lista.length === 1 ? '' : 's'})`),
+            el('td', { style: 'padding:12px 14px;font-weight:900;color:#b91c1c;font-size:16px;white-space:nowrap' }, brl(total)),
+            el('td', { colspan: '2' }, '')))))
+        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhuma despesa neste filtro. Clique em "+ Nova despesa" para registrar.')));
+  }
+
+  function formDespesa(d) {
+    const f = {
+      data: el('input', { type: 'date', value: d ? String(d.data).slice(0, 10) : hojeISO(), required: '' }),
+      descricao: el('input', { value: d ? d.descricao : '', maxlength: '200', required: '', placeholder: 'Ex: Compra de caixas de isopor' }),
+      valor: el('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', value: d ? String(d.valor) : '', placeholder: '0,00' }),
+      forma: el('select', {}, Object.entries(FORMAS_PGTO).map(([k, v]) => el('option', { value: k, selected: d ? d.forma_pagamento === k : k === 'dinheiro' }, v))),
+      data_pagamento: el('input', { type: 'date', value: d && d.data_pagamento ? String(d.data_pagamento).slice(0, 10) : '' }),
+      parcelas: el('input', { type: 'number', min: '1', max: '48', step: '1', value: String(d ? d.parcelas || 1 : 1) }),
+    };
+    const preview = el('div', { style: 'font-size:13px;color:#166534;font-weight:700;margin:-4px 0 10px' });
+    const blocoCartao = el('div', { style: 'background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 12px 2px;margin-bottom:12px' },
+      group('Data para pagamento (vencimento do cartão)', f.data_pagamento),
+      group('Parcelado em quantas vezes (X vezes)', f.parcelas),
+      preview);
+
+    const atualizar = () => {
+      const cartao = f.forma.value === 'cartao';
+      blocoCartao.style.display = cartao ? '' : 'none';
+      if (cartao && !f.data_pagamento.value && f.data.value) f.data_pagamento.value = f.data.value;
+      const n = Math.max(1, parseInt(f.parcelas.value, 10) || 1);
+      const v = Number(f.valor.value) || 0;
+      preview.textContent = n > 1 ? `${n}x de ${brl(v / n)}` : `À vista no cartão: ${brl(v)}`;
+    };
+    ['change', 'input'].forEach((ev) => { f.forma.addEventListener(ev, atualizar); f.parcelas.addEventListener(ev, atualizar); f.valor.addEventListener(ev, atualizar); });
+    atualizar();
+
+    const salvar = () => guard(async () => {
+      const descricao = f.descricao.value.trim();
+      const valor = Number(f.valor.value);
+      if (!f.data.value) throw new Error('Informe a data');
+      if (!descricao) throw new Error('Informe a descrição');
+      if (!(valor > 0)) throw new Error('Informe um valor maior que zero');
+      const cartao = f.forma.value === 'cartao';
+      const parcelas = Math.min(48, Math.max(1, parseInt(f.parcelas.value, 10) || 1));
+      if (cartao && !f.data_pagamento.value) throw new Error('Informe a data para pagamento do cartão');
+      await client.adminSalvarDespesa(d ? d.id : null, {
+        data: f.data.value,
+        descricao,
+        valor: Math.round(valor * 100) / 100,
+        forma_pagamento: f.forma.value,
+        data_pagamento: cartao ? f.data_pagamento.value : null,
+        parcelas: cartao ? parcelas : 1,
+      });
+      invalidarDespesasCache();
+      toast('Despesa salva');
+      closeModal();
+      viewDespesas(true);
+    });
+
+    openModal(d ? 'Editar despesa' : 'Nova despesa', el('div', {},
+      group('Data', f.data), group('Descrição', f.descricao), group('Valor (R$)', f.valor), group('Forma de pagamento', f.forma),
+      blocoCartao,
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn', onclick: salvar }, 'Salvar'),
+        el('button', { class: 'btn secondary', onclick: closeModal }, 'Cancelar'))));
+  }
+
+  function excluirDespesa(d) {
+    pedirSenha({
+      titulo: 'Excluir despesa?',
+      mensagem: `"${d.descricao}" (${brl(d.valor)}) será removida permanentemente.`,
+      executar: async (senha) => {
+        await client.excluirDespesa(d.id, senha);
+        invalidarDespesasCache();
+        toast('Despesa excluída');
+        viewDespesas(true);
       },
     });
   }

@@ -392,13 +392,51 @@
       });
     }
 
+    // --- Despesas (gastos) ---
+    async function adminListarDespesas() {
+      return (await req('/rest/v1/despesas?select=*&order=data.desc,id.desc&limit=5000')) || [];
+    }
+
+    async function adminSalvarDespesa(id, d) {
+      var body = {
+        data: d.data,
+        descricao: String(d.descricao || '').trim(),
+        valor: Number(d.valor) || 0,
+        forma_pagamento: d.forma_pagamento,
+        data_pagamento: d.forma_pagamento === 'cartao' ? (d.data_pagamento || null) : null,
+        parcelas: d.forma_pagamento === 'cartao' ? (Number(d.parcelas) || 1) : 1,
+      };
+      if (id) {
+        var rows = await req('/rest/v1/despesas?id=eq.' + id, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify(body),
+        });
+        return rows && rows[0];
+      }
+      var criado = await req('/rest/v1/despesas', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(body),
+      });
+      return criado && criado[0];
+    }
+
+    async function excluirDespesa(id, senha) {
+      return await req('/rest/v1/rpc/excluir_despesa', {
+        method: 'POST',
+        body: JSON.stringify({ p_id: id, p_senha: senha }),
+      });
+    }
+
     // --- Backup / Exportação Completa ---
     async function adminExportarTudo() {
       var resultados = await Promise.all([
         req('/rest/v1/categorias?select=*&order=coluna.asc,ordem.asc,id.asc'),
         req('/rest/v1/produtos?select=*,categorias(nome,coluna,ordem)&order=ordem.asc,id.asc'),
         req('/rest/v1/pedidos?select=*,pedido_itens(*)&order=id.asc'),
-        getConfig()
+        getConfig(),
+        req('/rest/v1/despesas?select=*&order=data.asc,id.asc').catch(function () { return []; })
       ]);
       var cats = resultados[0] || [];
       var prods = (resultados[1] || []).map(function (p) {
@@ -408,6 +446,7 @@
       });
       var pedidos = resultados[2] || [];
       var cfg = resultados[3] || {};
+      var despesas = resultados[4] || [];
 
       return {
         sistema: 'EISBERG',
@@ -418,11 +457,13 @@
           total_categorias: cats.length,
           total_produtos: prods.length,
           total_pedidos: pedidos.length,
+          total_despesas: despesas.length,
         },
         configuracoes: cfg,
         categorias: cats,
         produtos: prods,
         pedidos: pedidos,
+        despesas: despesas,
       };
     }
 
@@ -450,6 +491,9 @@
       excluirPedido: excluirPedido,
       excluirProduto: excluirProduto,
       excluirCategoria: excluirCategoria,
+      adminListarDespesas: adminListarDespesas,
+      adminSalvarDespesa: adminSalvarDespesa,
+      excluirDespesa: excluirDespesa,
     };
   }
 
