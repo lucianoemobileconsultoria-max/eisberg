@@ -9,6 +9,7 @@
   let tab = 'pedidos';
   let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
   let paginacaoPedidos = { pagina: 1, limite: 20 };
+  let refocarBusca = false;
 
   /* ---------------- Helpers ---------------- */
   function el(tag, props = {}, ...children) {
@@ -216,6 +217,8 @@
       try { await client.auth.signOut(); } catch (_) { }
     }
     sessionStorage.removeItem('eisberg_sb_token');
+    invalidarPedidosCache();
+    mapaUI.completo = false;
     mostrar();
     if (expirou) toast('Sessão expirada. Entre novamente.', true);
   }
@@ -293,7 +296,6 @@
   const MAPA_CORES = { novo: '#d9141e', em_producao: '#f59e0b', entregue: '#16a34a', cancelado: '#6b7280' };
   const MAPA_PRIORIDADE = ['novo', 'em_producao', 'entregue', 'cancelado'];
   let mapaFiltro = { status: '', periodo: 'todos' };
-  let mapaInst = null;
   let mapaRun = 0;
   let leafletPromise = null;
 
@@ -314,11 +316,62 @@
     return leafletPromise;
   }
 
-  function mapaLerCache() {
-    try { return JSON.parse(localStorage.getItem(MAPA_GEO_KEY)) || {}; } catch (_) { return {}; }
+  // ---- Cache de pedidos em memória (evita buscar no banco a cada clique) ----
+  const PEDIDOS_TTL_MS = 60000;
+  const PEDIDOS_LIMITE_API = 500;
+  let pedidosCache = { rows: null, t: 0, promise: null };
+
+  function invalidarPedidosCache() {
+    pedidosCache = { rows: null, t: 0, promise: null };
   }
-  function mapaSalvarCache(c) {
-    try { localStorage.setItem(MAPA_GEO_KEY, JSON.stringify(c)); } catch (_) { }
+
+  function obterPedidos(forcar) {
+    if (forcar) invalidarPedidosCache();
+    const c = pedidosCache;
+    if (c.rows && Date.now() - c.t < PEDIDOS_TTL_MS) return Promise.resolve(c.rows);
+    if (c.promise) return c.promise;
+    c.promise = client.adminListarPedidos({ resumo: false })
+      .then((r) => {
+        if (pedidosCache === c) { c.rows = r.pedidos; c.t = Date.now(); c.promise = null; }
+        return r.pedidos;
+      })
+      .catch((e) => {
+        if (pedidosCache === c) c.promise = null;
+        throw e;
+      });
+    return c.promise;
+  }
+
+  const semAcento = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  function pedidoCasaBusca(p, q) {
+    const n = semAcento(q).trim();
+    if (!n) return true;
+    if (String(p.id) === n) return true;
+    return [p.cliente, p.cidade, p.cod, p.endereco].some((v) => semAcento(v).includes(n));
+  }
+
+  // ---- Geocodificação com cache persistente (localStorage) + memória ----
+  const MAPA_MISS_TTL = 7 * 24 * 3600 * 1000;
+  let mapaGeoMem = null;
+  let mapaSalvarTimer = null;
+
+  function mapaGeo() {
+    if (!mapaGeoMem) {
+      try { mapaGeoMem = JSON.parse(localStorage.getItem(MAPA_GEO_KEY)) || {}; } catch (_) { mapaGeoMem = {}; }
+    }
+    return mapaGeoMem;
+  }
+  function mapaSalvarGeo(agora) {
+    clearTimeout(mapaSalvarTimer);
+    const gravar = () => { try { localStorage.setItem(MAPA_GEO_KEY, JSON.stringify(mapaGeo())); } catch (_) { } };
+    if (agora) gravar(); else mapaSalvarTimer = setTimeout(gravar, 400);
+  }
+  // undefined = nunca consultado | null = não encontrado | {lat,lng,approx} = ok
+  function mapaDoCache(key) {
+    const c = mapaGeo()[key];
+    if (c === undefined) return undefined;
+    if (c.miss) return (Date.now() - (c.t || 0) > MAPA_MISS_TTL) ? undefined : null;
+    return c;
   }
   const mapaNorm = (s) => String(s || '').trim().replace(/\s+/g, ' ');
   const mapaEsperar = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -331,29 +384,37 @@
     return j && j[0] ? { lat: parseFloat(j[0].lat), lng: parseFloat(j[0].lon) } : null;
   }
 
-  // Retorna { pos, doCache } ; pos = {lat,lng,approx} | null (endereço não encontrado)
-  async function mapaGeocodificar(endereco, cidade, cache, key) {
-    if (cache[key] !== undefined) return { pos: cache[key].miss ? null : cache[key], doCache: true };
+  // Consulta a internet apenas para o que ainda não está no cache.
+  async function mapaGeocodificar(endereco, cidade, key) {
     let achou = null;
     if (endereco) {
       achou = await mapaNominatim([endereco, cidade, 'Brasil'].filter(Boolean).join(', '));
       if (achou) achou.approx = false;
-      if (!achou && cidade) { await mapaEsperar(1100); }
     }
     if (!achou && cidade) {
-      achou = await mapaNominatim(cidade + ', Brasil');
-      if (achou) achou.approx = true;
+      const keyCidade = '|' + cidade.toLowerCase();
+      const cc = mapaDoCache(keyCidade);
+      if (cc !== undefined) {
+        achou = cc; // reaproveita a posição da cidade (sem nova consulta)
+      } else {
+        if (endereco) await mapaEsperar(1100);
+        const r = await mapaNominatim(cidade + ', Brasil');
+        achou = r ? { lat: r.lat, lng: r.lng, approx: true } : null;
+        mapaGeo()[keyCidade] = achou || { miss: true, t: Date.now() };
+      }
     }
-    cache[key] = achou || { miss: true, t: Date.now() };
-    mapaSalvarCache(cache);
-    return { pos: achou, doCache: false };
+    mapaGeo()[key] = achou || { miss: true, t: Date.now() };
+    mapaSalvarGeo(false);
+    return achou;
   }
 
-  async function viewMapa() {
-    const run = ++mapaRun;
-    if (mapaInst) { try { mapaInst.remove(); } catch (_) { } mapaInst = null; }
+  // Estado persistente do mapa: o mapa NÃO é recriado ao voltar para a aba.
+  const mapaUI = { map: null, canvas: null, layer: null, sig: null, completo: false, resumo: '' };
 
-    const statusTxt = el('span', { class: 'mapa-status' }, 'Carregando pedidos...');
+  async function viewMapa(forcar) {
+    const run = ++mapaRun;
+
+    const statusTxt = el('span', { class: 'mapa-status' }, mapaUI.resumo || 'Carregando pedidos...');
     const selStatus = el('select', { onchange: (e) => { mapaFiltro.status = e.target.value; viewMapa(); } },
       el('option', { value: '', selected: !mapaFiltro.status }, 'Todos os status'),
       Object.entries(STATUS).map(([k, v]) => el('option', { value: k, selected: mapaFiltro.status === k }, v)));
@@ -365,31 +426,46 @@
       periodos.map(([k, v]) => el('option', { value: k, selected: mapaFiltro.periodo === k }, '📅 ' + v)));
     const legenda = el('div', { class: 'mapa-legenda' },
       Object.entries(STATUS).map(([k, v]) => el('span', {}, el('i', { style: 'background:' + MAPA_CORES[k] }), v)));
-    const canvas = el('div', { id: 'mapa-pedidos', class: 'mapa-canvas' });
+    if (!mapaUI.canvas) mapaUI.canvas = el('div', { id: 'mapa-pedidos', class: 'mapa-canvas' });
 
     $('main').replaceChildren(
       el('div', { class: 'toolbar' },
         selStatus, selPer,
-        el('button', { class: 'btn secondary', onclick: () => viewMapa() }, '🔄 Atualizar'),
+        el('button', { class: 'btn secondary', title: 'Buscar pedidos novos no banco', onclick: () => viewMapa(true) }, '🔄 Atualizar'),
         el('span', { class: 'grow' }),
         legenda),
       el('div', { class: 'mapa-info' }, statusTxt),
-      el('div', { class: 'mapa-wrap' }, canvas));
+      el('div', { class: 'mapa-wrap' }, mapaUI.canvas));
 
-    const [{ pedidos }] = await Promise.all([client.adminListarPedidos({}), mapaCarregarLeaflet()]);
-    if (run !== mapaRun || tab !== 'mapa') return;
+    const [pedidos] = await Promise.all([obterPedidos(!!forcar), mapaCarregarLeaflet()]);
+    if (run !== mapaRun) return;
+
+    const L = window.L;
+    if (!mapaUI.map) {
+      mapaUI.map = L.map(mapaUI.canvas, { preferCanvas: true }).setView([-14.2, -51.9], 4);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+      }).addTo(mapaUI.map);
+      mapaUI.layer = L.layerGroup().addTo(mapaUI.map);
+    } else {
+      mapaUI.map.invalidateSize();
+    }
+    const map = mapaUI.map;
 
     const lista = pedidos
       .filter((p) => pedidoNoPeriodo(p, mapaFiltro.periodo, '', ''))
       .filter((p) => !mapaFiltro.status || p.status === mapaFiltro.status);
 
-    const L = window.L;
-    const map = L.map(canvas).setView([-14.2, -51.9], 4);
-    mapaInst = map;
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
-    }).addTo(map);
+    // Nada mudou desde a última montagem? Reaproveita o mapa pronto (instantâneo).
+    const sig = mapaFiltro.status + '#' + mapaFiltro.periodo + '#' +
+      lista.map((p) => p.id + ':' + p.status + ':' + (p.endereco || '') + ':' + (p.cidade || '')).join('|');
+    if (mapaUI.completo && mapaUI.sig === sig) {
+      statusTxt.textContent = mapaUI.resumo;
+      return;
+    }
+    mapaUI.completo = false;
+    mapaUI.layer.clearLayers();
 
     // Agrupa pedidos pelo endereço (uma única consulta por endereço)
     const porEndereco = new Map();
@@ -403,35 +479,31 @@
       porEndereco.get(key).pedidos.push(p);
     });
 
-    // Grupos por coordenada (vários pedidos no mesmo ponto = um alfinete)
     const grupos = new Map();
     const bounds = [];
     let encontrados = 0, naoEncontrados = 0, feitos = 0;
     const total = porEndereco.size;
-    const atualizarTxt = (fim) => {
+    const montarResumo = (fim) => {
       const partes = [`📍 ${lista.length} pedido${lista.length === 1 ? '' : 's'} no filtro`];
       partes.push(`${encontrados} endereço${encontrados === 1 ? '' : 's'} no mapa`);
       if (naoEncontrados) partes.push(`${naoEncontrados} não localizado${naoEncontrados === 1 ? '' : 's'}`);
       if (semEndereco) partes.push(`${semEndereco} sem endereço`);
       if (!fim) partes.push(`⏳ localizando ${feitos}/${total}...`);
-      statusTxt.textContent = partes.join(' • ');
+      return partes.join(' • ');
     };
 
-    const montarPopup = (g) => {
-      const wrap = el('div', { class: 'mapa-popup' },
-        el('div', { class: 'mapa-popup-end' }, g.rotulo),
-        g.approx ? el('div', { class: 'mapa-popup-aprox' }, '⚠ Localização aproximada (somente a cidade)') : null,
-        g.pedidos.map((p) => el('div', { class: 'mapa-popup-ped' },
-          el('div', {}, el('b', {}, `#${p.id} ${p.cliente || ''}`), ' ', el('span', { class: 'badge ' + p.status }, STATUS[p.status] || p.status)),
-          el('div', { class: 'mapa-popup-sub' }, `${p.data || fmtData(p.criado_em)} • ${p.total > 0 ? brl(p.total) : 'sem valor'}${p.endereco ? ' • ' + p.endereco : ''}`),
-          el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver pedido'))),
-        el('a', {
-          class: 'btn sm', target: '_blank', rel: 'noopener noreferrer',
-          href: `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lng}`,
-          style: 'display:inline-block;margin-top:6px',
-        }, '🧭 Traçar rota'));
-      return wrap;
-    };
+    const montarPopup = (g) => el('div', { class: 'mapa-popup' },
+      el('div', { class: 'mapa-popup-end' }, g.rotulo),
+      g.approx ? el('div', { class: 'mapa-popup-aprox' }, '⚠ Localização aproximada (somente a cidade)') : null,
+      g.pedidos.map((p) => el('div', { class: 'mapa-popup-ped' },
+        el('div', {}, el('b', {}, `#${p.id} ${p.cliente || ''}`), ' ', el('span', { class: 'badge ' + p.status }, STATUS[p.status] || p.status)),
+        el('div', { class: 'mapa-popup-sub' }, `${p.data || fmtData(p.criado_em)} • ${p.total > 0 ? brl(p.total) : 'sem valor'}${p.endereco ? ' • ' + p.endereco : ''}`),
+        el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver pedido'))),
+      el('a', {
+        class: 'btn sm', target: '_blank', rel: 'noopener noreferrer',
+        href: `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lng}`,
+        style: 'display:inline-block;margin-top:6px',
+      }, '🧭 Traçar rota'));
 
     const desenharGrupo = (g) => {
       const st = MAPA_PRIORIDADE.find((s) => g.pedidos.some((p) => p.status === s)) || 'novo';
@@ -441,45 +513,57 @@
         html: `<div class="mapa-pin" style="--c:${MAPA_CORES[st]}"><span>${n > 1 ? n : ''}</span></div>`,
         iconSize: [30, 30], iconAnchor: [15, 36], popupAnchor: [0, -34],
       });
-      if (g.marker) map.removeLayer(g.marker);
-      g.marker = L.marker([g.lat, g.lng], { icon, title: g.rotulo }).addTo(map).bindPopup(montarPopup(g), { maxWidth: 320 });
+      if (g.marker) mapaUI.layer.removeLayer(g.marker);
+      // O conteúdo do popup só é montado quando o alfinete é clicado (mais leve)
+      g.marker = L.marker([g.lat, g.lng], { icon, title: g.rotulo }).bindPopup(() => montarPopup(g), { maxWidth: 320 });
+      mapaUI.layer.addLayer(g.marker);
+    };
+    const ajustarVista = () => {
+      if (!bounds.length) return;
+      if (bounds.length === 1) map.setView(bounds[0], 15, { animate: false });
+      else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16, animate: false });
     };
 
-    atualizarTxt(false);
-    const cache = mapaLerCache();
+    statusTxt.textContent = montarResumo(false);
     for (const [key, item] of porEndereco) {
-      if (run !== mapaRun || tab !== 'mapa') return;
-      let r = null;
-      let veioDoCache = cache[key] !== undefined;
-      try {
-        r = await mapaGeocodificar(item.end, item.cid, cache, key);
-      } catch (_) {
-        r = { pos: null, doCache: true, erro: true };
+      if (run !== mapaRun) return; // outra montagem começou; o cache garante retomada rápida
+      let pos = mapaDoCache(key);
+      const precisouRede = pos === undefined;
+      if (precisouRede) {
+        try { pos = await mapaGeocodificar(item.end, item.cid, key); } catch (_) { pos = null; }
+        if (run !== mapaRun) return;
       }
       feitos++;
-      if (r.pos) {
+      if (pos) {
         encontrados++;
-        const ck = r.pos.lat.toFixed(5) + ',' + r.pos.lng.toFixed(5);
+        const ck = pos.lat.toFixed(5) + ',' + pos.lng.toFixed(5);
         let g = grupos.get(ck);
         if (!g) {
-          g = { lat: r.pos.lat, lng: r.pos.lng, approx: !!r.pos.approx, pedidos: [], rotulo: [item.end, item.cid].filter(Boolean).join(' - ') };
+          g = { lat: pos.lat, lng: pos.lng, approx: !!pos.approx, pedidos: [], rotulo: [item.end, item.cid].filter(Boolean).join(' - ') };
           grupos.set(ck, g);
           bounds.push([g.lat, g.lng]);
-        } else if (g.approx && !r.pos.approx) {
+        } else if (g.approx && !pos.approx) {
           g.approx = false;
         }
         g.pedidos.push(...item.pedidos);
         desenharGrupo(g);
-        if (bounds.length === 1) map.setView(bounds[0], 15);
-        else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        if (precisouRede) ajustarVista();
       } else {
         naoEncontrados++;
       }
-      atualizarTxt(feitos >= total);
-      if (!veioDoCache && feitos < total) await mapaEsperar(1100); // limite do Nominatim: 1 consulta/seg
+      if (precisouRede) {
+        statusTxt.textContent = montarResumo(false);
+        if (feitos < total) await mapaEsperar(1100); // limite do Nominatim: 1 consulta/seg
+      } else if (feitos % 25 === 0) {
+        await mapaEsperar(0); // respira para não travar a tela
+      }
     }
-    atualizarTxt(true);
-    if (!total) statusTxt.textContent = '📍 Nenhum pedido com endereço neste filtro.';
+    mapaSalvarGeo(true);
+    ajustarVista();
+    mapaUI.resumo = total ? montarResumo(true) : '📍 Nenhum pedido com endereço neste filtro.';
+    mapaUI.sig = sig;
+    mapaUI.completo = true;
+    statusTxt.textContent = mapaUI.resumo;
   }
 
   /* =================================================================
@@ -646,7 +730,14 @@
   }
 
   async function viewPedidos() {
-    const { pedidos } = await client.adminListarPedidos({ q: filtro.q });
+    let pedidos = await obterPedidos(false);
+    if (filtro.q) {
+      if (pedidos.length >= PEDIDOS_LIMITE_API) {
+        pedidos = (await client.adminListarPedidos({ q: filtro.q, resumo: false })).pedidos;
+      } else {
+        pedidos = pedidos.filter((p) => pedidoCasaBusca(p, filtro.q));
+      }
+    }
     const main = $('main');
 
     // Filtrar pelo período selecionado
@@ -732,6 +823,7 @@
       debounceBusca = setTimeout(() => {
         filtro.q = busca.value.trim();
         paginacaoPedidos.pagina = 1;
+        refocarBusca = true;
         viewPedidos();
       }, 250);
     });
@@ -905,6 +997,7 @@
       el('div', { class: 'toolbar' },
         busca,
         el('button', { class: 'btn secondary', onclick: () => { filtro.q = busca.value.trim(); paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Buscar'),
+        el('button', { class: 'btn secondary', title: 'Buscar pedidos novos no banco', onclick: () => { invalidarPedidosCache(); viewPedidos(); } }, '🔄 Atualizar'),
         el('div', { class: 'periodo-pills' },
           pill('todos', 'Todos'),
           pill('hoje', 'Hoje'),
@@ -973,6 +1066,12 @@
             el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}".`),
             el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
     );
+    if (refocarBusca) {
+      refocarBusca = false;
+      busca.focus();
+      const n = busca.value.length;
+      try { busca.setSelectionRange(n, n); } catch (_) { }
+    }
   }
 
   function excluirPedido(p) {
@@ -983,6 +1082,7 @@
         await client.excluirPedido(p.id, senha);
         toast('Pedido excluído');
         closeModal();
+        invalidarPedidosCache();
         carregar();
       },
     });
@@ -993,6 +1093,7 @@
       await client.adminAtualizarStatus(id, status);
       toast('Status atualizado');
       verPedido(id);
+      invalidarPedidosCache();
       carregar();
     });
   }
@@ -1472,6 +1573,7 @@
       await client.adminSalvarPedido(id || null, body);
       toast('Pedido salvo');
       closeModal();
+      invalidarPedidosCache();
       carregar();
     });
 

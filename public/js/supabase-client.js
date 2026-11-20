@@ -221,10 +221,12 @@
 
       // Resumo de contagem por status (feito em uma passada)
       var resumo = { novo: 0, em_producao: 0, entregue: 0, cancelado: 0 };
-      var resumoRows = await req('/rest/v1/pedidos?select=status');
-      (resumoRows || []).forEach(function (r) {
-        if (resumo[r.status] !== undefined) resumo[r.status]++;
-      });
+      if (filtro.resumo !== false) {
+        var resumoRows = await req('/rest/v1/pedidos?select=status');
+        (resumoRows || []).forEach(function (r) {
+          if (resumo[r.status] !== undefined) resumo[r.status]++;
+        });
+      }
 
       rows.forEach(function (p) {
         var itens = p.pedido_itens || [];
