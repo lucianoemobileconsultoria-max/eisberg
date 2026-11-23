@@ -429,6 +429,51 @@
       });
     }
 
+    // --- Usuários do App (login e senha) ---
+    async function adminListarUsuarios() {
+      return (await req('/rest/v1/rpc/admin_listar_usuarios', {
+        method: 'POST',
+        body: '{}',
+      })) || [];
+    }
+
+    async function adminSalvarUsuario(id, u) {
+      return await req('/rest/v1/rpc/admin_salvar_usuario', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_id: id || null,
+          p_nome: String((u && u.nome) || '').trim(),
+          p_login: String((u && u.login) || '').trim(),
+          p_senha: (u && u.senha) ? String(u.senha) : '',
+          p_ativo: !u || u.ativo !== false,
+        }),
+      });
+    }
+
+    async function excluirUsuario(id, senha) {
+      return await req('/rest/v1/rpc/excluir_usuario', {
+        method: 'POST',
+        body: JSON.stringify({ p_id: id, p_senha: senha }),
+      });
+    }
+
+    async function loginUsuario(login, senha) {
+      return await req('/rest/v1/rpc/login_usuario', {
+        method: 'POST',
+        noAuth: true,
+        body: JSON.stringify({ p_login: login, p_senha: senha }),
+      });
+    }
+
+    async function validarUsuarioAtivo(id, login) {
+      var res = await req('/rest/v1/rpc/validar_usuario_ativo', {
+        method: 'POST',
+        noAuth: true,
+        body: JSON.stringify({ p_id: id, p_login: login }),
+      });
+      return res === true;
+    }
+
     // --- Backup / Exportação Completa ---
     async function adminExportarTudo() {
       var resultados = await Promise.all([
@@ -436,7 +481,8 @@
         req('/rest/v1/produtos?select=*,categorias(nome,coluna,ordem)&order=ordem.asc,id.asc'),
         req('/rest/v1/pedidos?select=*,pedido_itens(*)&order=id.asc'),
         getConfig(),
-        req('/rest/v1/despesas?select=*&order=data.asc,id.asc').catch(function () { return []; })
+        req('/rest/v1/despesas?select=*&order=data.asc,id.asc').catch(function () { return []; }),
+        adminListarUsuarios().catch(function () { return []; })
       ]);
       var cats = resultados[0] || [];
       var prods = (resultados[1] || []).map(function (p) {
@@ -447,6 +493,7 @@
       var pedidos = resultados[2] || [];
       var cfg = resultados[3] || {};
       var despesas = resultados[4] || [];
+      var usuarios = resultados[5] || [];
 
       return {
         sistema: 'EISBERG',
@@ -458,12 +505,14 @@
           total_produtos: prods.length,
           total_pedidos: pedidos.length,
           total_despesas: despesas.length,
+          total_usuarios: usuarios.length,
         },
         configuracoes: cfg,
         categorias: cats,
         produtos: prods,
         pedidos: pedidos,
         despesas: despesas,
+        usuarios: usuarios,
       };
     }
 
@@ -494,6 +543,11 @@
       adminListarDespesas: adminListarDespesas,
       adminSalvarDespesa: adminSalvarDespesa,
       excluirDespesa: excluirDespesa,
+      adminListarUsuarios: adminListarUsuarios,
+      adminSalvarUsuario: adminSalvarUsuario,
+      excluirUsuario: excluirUsuario,
+      loginUsuario: loginUsuario,
+      validarUsuarioAtivo: validarUsuarioAtivo,
     };
   }
 

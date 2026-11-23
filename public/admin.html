@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="img/icon-192.png">
   <link rel="apple-touch-icon" href="img/icon-192.png">
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
   <!-- Login -->
@@ -55,18 +55,19 @@
       <button data-tab="despesas">💸 Despesas</button>
       <button data-tab="produtos">Produtos</button>
       <button data-tab="categorias">Categorias</button>
+      <button data-tab="usuarios">👥 Usuários</button>
       <button data-tab="empresa">⚙️ Dados da Empresa</button>
     </nav>
     <main class="admin-main" id="main"></main>
   </div>
 
   <div id="modal-root"></div>
-  <script src="js/supabase-client.js?v=20"></script>
-  <script src="js/admin.js?v=20"></script>
+  <script src="js/supabase-client.js?v=21"></script>
+  <script src="js/admin.js?v=21"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=20').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=21').then((reg) => {
           reg.update();
         }).catch(console.error);
       });

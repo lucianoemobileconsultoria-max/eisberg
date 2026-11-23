@@ -152,6 +152,7 @@
             el('li', {}, `${backup.resumo.total_produtos} Produtos cadastrados (preços, unidades e status)`),
             el('li', {}, `${backup.resumo.total_pedidos} Pedidos completos (com todos os itens)`),
             backup.resumo.total_despesas ? el('li', {}, `${backup.resumo.total_despesas} Despesas registradas`) : null,
+            backup.resumo.total_usuarios ? el('li', {}, `${backup.resumo.total_usuarios} Usuários cadastrados`) : null,
             el('li', {}, `Configurações da empresa (${backup.configuracoes.nome_empresa || 'EISBERG'}, telefone e WhatsApp)`)
           )
         ),
@@ -220,6 +221,7 @@
     sessionStorage.removeItem('eisberg_sb_token');
     invalidarPedidosCache();
     despesasCache = { rows: null, t: 0 };
+    usuariosCache = { rows: null, t: 0 };
     mapaUI.completo = false;
     mostrar();
     if (expirou) toast('Sessão expirada. Entre novamente.', true);
@@ -288,6 +290,7 @@
       categorias: viewCategorias,
       mapa: viewMapa,
       despesas: viewDespesas,
+      usuarios: viewUsuarios,
       empresa: viewEmpresa,
     }[tab]()));
   }
@@ -2170,6 +2173,296 @@ grant  execute on function public.excluir_despesa(bigint, text) to authenticated
         invalidarDespesasCache();
         toast('Despesa excluída');
         viewDespesas(true);
+      },
+    });
+  }
+
+  /* =================================================================
+     USUÁRIOS DO APP (login e senha)
+     ================================================================= */
+  const USUARIOS_SQL = `create extension if not exists pgcrypto;
+create table if not exists public.usuarios (
+  id            bigint generated always as identity primary key,
+  nome          text        not null default '' check (char_length(btrim(nome)) <= 120),
+  login         text        not null check (char_length(btrim(login)) between 2 and 120 and btrim(login) !~ '\\s'),
+  senha_hash    text        not null,
+  ativo         boolean     not null default true,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create unique index if not exists usuarios_login_lower_uidx on public.usuarios (lower(btrim(login)));
+create index if not exists usuarios_ativo_idx on public.usuarios (ativo, id desc);
+alter table public.usuarios enable row level security;
+revoke all on public.usuarios from anon, authenticated;
+create or replace function public.admin_listar_usuarios()
+returns table (id bigint, nome text, login text, ativo boolean, criado_em timestamptz, atualizado_em timestamptz)
+language plpgsql stable security definer set search_path = public, extensions as $$
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  return query select u.id, u.nome, u.login, u.ativo, u.criado_em, u.atualizado_em from public.usuarios u order by u.id desc;
+end; $$;
+create or replace function public.admin_salvar_usuario(p_id bigint, p_nome text, p_login text, p_senha text, p_ativo boolean default true)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_nome text := btrim(coalesce(p_nome, ''));
+  v_login text := lower(btrim(coalesce(p_login, '')));
+  v_senha text := coalesce(p_senha, '');
+  v_ativo boolean := coalesce(p_ativo, true);
+  v_row public.usuarios%rowtype;
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  if char_length(v_nome) > 120 then raise exception 'O nome deve ter no máximo 120 caracteres'; end if;
+  if char_length(v_login) < 2 or char_length(v_login) > 120 or v_login ~ '\\s' then raise exception 'Informe um login válido (mínimo 2 caracteres, sem espaços)'; end if;
+  if exists (select 1 from public.usuarios where lower(btrim(login)) = v_login and (p_id is null or id <> p_id)) then
+    raise exception 'Já existe um usuário cadastrado com este login';
+  end if;
+  if p_id is null then
+    if char_length(v_senha) < 4 then raise exception 'Informe uma senha com pelo menos 4 caracteres'; end if;
+    insert into public.usuarios (nome, login, senha_hash, ativo) values (v_nome, v_login, crypt(v_senha, gen_salt('bf')), v_ativo) returning * into v_row;
+  else
+    if char_length(v_senha) > 0 then
+      if char_length(v_senha) < 4 then raise exception 'A nova senha deve ter pelo menos 4 caracteres'; end if;
+      update public.usuarios set nome = v_nome, login = v_login, senha_hash = crypt(v_senha, gen_salt('bf')), ativo = v_ativo, atualizado_em = now() where id = p_id returning * into v_row;
+    else
+      update public.usuarios set nome = v_nome, login = v_login, ativo = v_ativo, atualizado_em = now() where id = p_id returning * into v_row;
+    end if;
+    if v_row.id is null then raise exception 'Usuário não encontrado'; end if;
+  end if;
+  return jsonb_build_object('id', v_row.id, 'nome', v_row.nome, 'login', v_row.login, 'ativo', v_row.ativo, 'criado_em', v_row.criado_em, 'atualizado_em', v_row.atualizado_em);
+end; $$;
+create or replace function public.excluir_usuario(p_id bigint, p_senha text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public._checar_exclusao(p_senha);
+  delete from public.usuarios where id = p_id;
+  if not found then raise exception 'Usuário não encontrado'; end if;
+end; $$;
+create or replace function public.login_usuario(p_login text, p_senha text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_login text := lower(btrim(coalesce(p_login, ''))); v_row public.usuarios%rowtype;
+begin
+  if v_login = '' or coalesce(p_senha, '') = '' then raise exception 'Informe seu login e sua senha'; end if;
+  select * into v_row from public.usuarios where lower(btrim(login)) = v_login or (position('@' in v_login) = 0 and lower(btrim(login)) = v_login || '@eisberg.com') limit 1;
+  if v_row.id is null or v_row.senha_hash <> crypt(p_senha, v_row.senha_hash) then perform pg_sleep(0.5); raise exception 'Login ou senha incorretos'; end if;
+  if not v_row.ativo then raise exception 'Usuário desativado. Contate o administrador.'; end if;
+  return jsonb_build_object('id', v_row.id, 'nome', v_row.nome, 'login', v_row.login, 'ativo', v_row.ativo);
+end; $$;
+create or replace function public.validar_usuario_ativo(p_id bigint, p_login text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.usuarios where id = p_id and lower(btrim(login)) = lower(btrim(coalesce(p_login, ''))) and ativo = true);
+$$;
+revoke execute on function public.admin_listar_usuarios() from public;
+revoke execute on function public.admin_salvar_usuario(bigint, text, text, text, boolean) from public;
+revoke execute on function public.excluir_usuario(bigint, text) from public;
+revoke execute on function public.login_usuario(text, text) from public;
+revoke execute on function public.validar_usuario_ativo(bigint, text) from public;
+grant execute on function public.admin_listar_usuarios() to authenticated;
+grant execute on function public.admin_salvar_usuario(bigint, text, text, text, boolean) to authenticated;
+grant execute on function public.excluir_usuario(bigint, text) to authenticated;
+grant execute on function public.login_usuario(text, text) to anon, authenticated;
+grant execute on function public.validar_usuario_ativo(bigint, text) to anon, authenticated;`;
+
+  let usuariosCache = { rows: null, t: 0 };
+  let usuariosFiltro = { status: '', q: '' };
+  let refocarBuscaUsuarios = false;
+
+  function invalidarUsuariosCache() { usuariosCache = { rows: null, t: 0 }; }
+  async function obterUsuarios(forcar) {
+    if (!forcar && usuariosCache.rows && Date.now() - usuariosCache.t < PEDIDOS_TTL_MS) return usuariosCache.rows;
+    const rows = await client.adminListarUsuarios();
+    usuariosCache = { rows, t: Date.now() };
+    return rows;
+  }
+  const usuariosSemTabela = (e) => {
+    const msg = (e && e.message) || '';
+    return /usuarios|admin_listar_usuarios/i.test(msg) && (e.status === 404 || /schema cache|does not exist|permission denied|not find/i.test(msg));
+  };
+
+  function telaSetupUsuarios() {
+    const pre = el('textarea', { readonly: '', rows: '14', style: 'width:100%;font-family:Consolas,monospace;font-size:12px;border:1.5px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc' });
+    pre.value = USUARIOS_SQL;
+    $('main').replaceChildren(el('div', { style: 'max-width:760px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 6px rgba(0,0,0,.1)' },
+      el('h3', { style: 'margin:0 0 8px;color:var(--red);font-size:22px' }, '👥 Ativar o cadastro de usuários'),
+      el('p', { style: 'color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 12px' },
+        'Para cadastrar usuários com login e senha é preciso criar a tabela e as funções de acesso no banco (uma única vez). Isso não altera os logins existentes nem nenhum dado do sistema.'),
+      el('ol', { style: 'font-size:14px;line-height:1.7;margin:0 0 12px 18px;padding:0' },
+        el('li', {}, 'Clique em ', el('b', {}, '📋 Copiar SQL'), '.'),
+        el('li', {}, 'Abra o ', el('a', { href: SQL_EDITOR_URL, target: '_blank', rel: 'noopener noreferrer', style: 'color:var(--red);font-weight:700' }, 'SQL Editor do Supabase'), ', cole e clique em ', el('b', {}, 'Run'), '.'),
+        el('li', {}, 'Volte aqui e clique em ', el('b', {}, '✅ Já executei'), '.')),
+      pre,
+      el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px' },
+        el('button', { class: 'btn secondary', onclick: async () => { try { await navigator.clipboard.writeText(USUARIOS_SQL); } catch (_) { pre.select(); document.execCommand('copy'); } toast('SQL copiado!'); } }, '📋 Copiar SQL'),
+        el('button', { class: 'btn', onclick: () => viewUsuarios(true).catch((e) => toast(e.message || 'Erro', true)) }, '✅ Já executei'))));
+  }
+
+  async function viewUsuarios(forcar) {
+    let todos;
+    try {
+      todos = await obterUsuarios(!!forcar);
+    } catch (e) {
+      if (usuariosSemTabela(e)) return telaSetupUsuarios();
+      throw e;
+    }
+
+    const total = todos.length;
+    const ativos = todos.filter((u) => u.ativo).length;
+    const inativos = total - ativos;
+
+    const lista = todos
+      .filter((u) => !usuariosFiltro.status || (usuariosFiltro.status === 'ativo' ? u.ativo : !u.ativo))
+      .filter((u) => {
+        const q = semAcento(usuariosFiltro.q).trim();
+        if (!q) return true;
+        return semAcento(u.nome).includes(q) || semAcento(u.login).includes(q);
+      });
+
+    const stat = (key, label, n) =>
+      el('div', {
+        class: 'stat' + (usuariosFiltro.status === key ? ' active' : ''),
+        onclick: () => { usuariosFiltro.status = (usuariosFiltro.status === key ? '' : key); viewUsuarios(); }
+      }, el('b', {}, String(n)), el('span', {}, label));
+
+    const busca = el('input', { type: 'search', placeholder: 'Buscar por nome ou login...', value: usuariosFiltro.q });
+    let debounceBusca = null;
+    busca.addEventListener('input', () => {
+      clearTimeout(debounceBusca);
+      debounceBusca = setTimeout(() => {
+        usuariosFiltro.q = busca.value.trim();
+        refocarBuscaUsuarios = true;
+        viewUsuarios();
+      }, 200);
+    });
+    busca.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(debounceBusca);
+        usuariosFiltro.q = busca.value.trim();
+        refocarBuscaUsuarios = true;
+        viewUsuarios();
+      }
+    });
+
+    const alternarAtivo = (u) => guard(async () => {
+      await client.adminSalvarUsuario(u.id, { nome: u.nome, login: u.login, senha: '', ativo: !u.ativo });
+      invalidarUsuariosCache();
+      toast(u.ativo ? 'Usuário desativado' : 'Usuário ativado');
+      viewUsuarios(true);
+    });
+
+    $('main').replaceChildren(
+      el('div', { class: 'cards' },
+        stat('', 'Todos os usuários', total),
+        stat('ativo', 'Ativos', ativos),
+        stat('inativo', 'Inativos', inativos)),
+      el('div', { class: 'toolbar' },
+        busca,
+        (usuariosFiltro.q || usuariosFiltro.status)
+          ? el('button', { class: 'btn sm secondary', onclick: () => { usuariosFiltro = { status: '', q: '' }; viewUsuarios(); } }, '✕ Limpar')
+          : null,
+        el('span', { class: 'grow' }),
+        el('button', { class: 'btn secondary', title: 'Recarregar do banco', onclick: () => guard(() => viewUsuarios(true)) }, '🔄 Atualizar'),
+        el('button', { class: 'btn', onclick: () => formUsuario() }, '+ Novo usuário')),
+      lista.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+          el('thead', {}, el('tr', {}, ...['Nome', 'Login', 'Status', 'Cadastrado em', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, lista.map((u) => el('tr', {},
+            el('td', {}, el('b', {}, u.nome || '—')),
+            el('td', {}, el('code', { style: 'background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px' }, u.login)),
+            el('td', {}, el('span', { class: 'badge ' + (u.ativo ? 'on' : 'off') }, u.ativo ? 'Ativo' : 'Inativo')),
+            el('td', {}, fmtData(u.criado_em)),
+            el('td', { class: 'actions' },
+              el('button', { class: 'btn sm secondary', onclick: () => alternarAtivo(u) }, u.ativo ? 'Desativar' : 'Ativar'),
+              el('button', { class: 'btn sm secondary', onclick: () => formUsuario(u) }, 'Editar'),
+              el('button', { class: 'btn sm danger', onclick: () => excluirUsuario(u) }, 'Excluir')))))))
+        : el('div', { class: 'table-wrap' },
+          el('div', { class: 'empty' }, total ? 'Nenhum usuário encontrado neste filtro.' : 'Nenhum usuário cadastrado ainda. Clique em "+ Novo usuário" para criar o primeiro.')));
+
+    if (refocarBuscaUsuarios) {
+      refocarBuscaUsuarios = false;
+      busca.focus();
+      const n = busca.value.length;
+      try { busca.setSelectionRange(n, n); } catch (_) { }
+    }
+  }
+
+  function formUsuario(u) {
+    const f = {
+      nome: el('input', { value: u ? (u.nome || '') : '', maxlength: '120', placeholder: 'Ex: João Silva' }),
+      login: el('input', { value: u ? u.login : '', maxlength: '120', autocomplete: 'off', required: '', placeholder: 'Ex: joao ou joao@eisberg.com' }),
+      senha: el('input', { type: 'password', maxlength: '100', autocomplete: 'new-password', placeholder: u ? 'Deixe em branco para não alterar' : 'Mínimo 4 caracteres' }),
+      confirmar: el('input', { type: 'password', maxlength: '100', autocomplete: 'new-password', placeholder: u ? 'Repita a nova senha se for alterar' : 'Repita a senha' }),
+      ativo: el('input', { type: 'checkbox', checked: u ? !!u.ativo : true }),
+    };
+
+    const btnVerSenha = el('button', {
+      type: 'button',
+      class: 'btn sm secondary',
+      title: 'Mostrar ou ocultar senha',
+      onclick: () => {
+        const mostrarSenha = f.senha.type === 'password';
+        f.senha.type = mostrarSenha ? 'text' : 'password';
+        f.confirmar.type = mostrarSenha ? 'text' : 'password';
+        btnVerSenha.textContent = mostrarSenha ? '🙈 Ocultar' : '👁 Mostrar';
+      }
+    }, '👁 Mostrar');
+
+    const campoSenha = el('div', { class: 'form-group' },
+      el('label', {}, u ? 'Nova senha (deixe em branco para manter)' : 'Senha *'),
+      el('div', { style: 'display:flex;gap:8px;align-items:center' },
+        f.senha,
+        btnVerSenha));
+    f.senha.style.flex = '1';
+
+    const salvar = () => guard(async () => {
+      const nome = f.nome.value.trim();
+      const login = f.login.value.trim().toLowerCase();
+      const senha = f.senha.value;
+      const confirmar = f.confirmar.value;
+
+      if (!login || login.length < 2 || /\s/.test(login)) {
+        throw new Error('Informe um login válido (mínimo 2 caracteres, sem espaços).');
+      }
+      if (!u && senha.length < 4) {
+        throw new Error('Informe uma senha com pelo menos 4 caracteres.');
+      }
+      if (senha.length > 0) {
+        if (senha.length < 4) throw new Error('A nova senha deve ter pelo menos 4 caracteres.');
+        if (senha !== confirmar) throw new Error('A senha e a confirmação não coincidem.');
+      }
+
+      await client.adminSalvarUsuario(u ? u.id : null, {
+        nome,
+        login,
+        senha,
+        ativo: f.ativo.checked,
+      });
+      invalidarUsuariosCache();
+      toast('Usuário salvo');
+      closeModal();
+      viewUsuarios(true);
+    });
+
+    openModal(u ? 'Editar usuário' : 'Novo usuário', el('div', {},
+      group('Nome', f.nome),
+      group('Login (sem espaços) *', f.login),
+      el('p', { style: 'font-size:12px;color:#777;margin:-6px 0 12px;line-height:1.35' },
+        'O usuário usará exatamente este login e a senha para entrar no App de Pedidos.'),
+      campoSenha,
+      group(u ? 'Confirmar nova senha' : 'Confirmar senha *', f.confirmar),
+      el('label', { class: 'check' }, f.ativo, 'Ativo (pode entrar no app de pedidos)'),
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn', onclick: salvar }, 'Salvar'),
+        el('button', { class: 'btn secondary', onclick: closeModal }, 'Cancelar'))));
+  }
+
+  function excluirUsuario(u) {
+    pedirSenha({
+      titulo: 'Excluir usuário?',
+      mensagem: `O login "${u.login}" será removido permanentemente e perderá o acesso ao app.`,
+      executar: async (senha) => {
+        await client.excluirUsuario(u.id, senha);
+        invalidarUsuariosCache();
+        toast('Usuário excluído');
+        viewUsuarios(true);
       },
     });
   }

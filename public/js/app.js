@@ -888,10 +888,47 @@
     localStorage.removeItem('eisberg_user_token');
     localStorage.removeItem('eisberg_user_refresh_token');
     localStorage.removeItem('eisberg_user_email');
+    localStorage.removeItem('eisberg_user_mode');
+    localStorage.removeItem('eisberg_user_id');
+    localStorage.removeItem('eisberg_user_nome');
     if (client) client.setToken(null);
   }
 
   async function garantirSessaoAtiva(mostrarErroLogin) {
+    const mode = localStorage.getItem('eisberg_user_mode');
+    if (mode === 'usuarios') {
+      if (client) client.setToken(null);
+      const id = Number(localStorage.getItem('eisberg_user_id'));
+      const login = localStorage.getItem('eisberg_user_email') || '';
+      if (!id || !login) {
+        limparSessaoLocal();
+        $('app-main').hidden = true;
+        $('app-login').hidden = false;
+        return false;
+      }
+      if (client && client.validarUsuarioAtivo) {
+        try {
+          const ativo = await client.validarUsuarioAtivo(id, login);
+          if (!ativo) {
+            limparSessaoLocal();
+            $('app-main').hidden = true;
+            $('app-login').hidden = false;
+            if (mostrarErroLogin) {
+              const err = $('app-login-error');
+              if (err) {
+                err.textContent = 'Seu acesso foi desativado ou removido. Entre em contato com o administrador.';
+                err.hidden = false;
+              }
+            }
+            return false;
+          }
+        } catch (_) {
+          // Mantém acesso em caso de oscilação momentânea de rede / offline
+        }
+      }
+      return true;
+    }
+
     const token = localStorage.getItem('eisberg_user_token');
     const refreshToken = localStorage.getItem('eisberg_user_refresh_token');
     if (!token) return false;
@@ -959,17 +996,19 @@
 
   async function verificarSessao() {
     const token = localStorage.getItem('eisberg_user_token');
+    const mode = localStorage.getItem('eisberg_user_mode');
     const email = localStorage.getItem('eisberg_user_email') || '';
-    if (token) {
+    if (token || mode === 'usuarios') {
       const ativa = await garantirSessaoAtiva(true);
       if (!ativa) return false;
       const emailAtual = localStorage.getItem('eisberg_user_email') || email;
+      const nomeAtual = localStorage.getItem('eisberg_user_nome') || '';
       $('app-login').hidden = true;
       $('app-main').hidden = false;
       const bEmail = $('user-badge-email');
       if (bEmail) bEmail.textContent = emailAtual;
-      if (!$('cliente').value.trim() && emailAtual) {
-        $('cliente').value = emailAtual.split('@')[0];
+      if (!$('cliente').value.trim() && (nomeAtual || emailAtual)) {
+        $('cliente').value = nomeAtual || emailAtual.split('@')[0];
       }
       carregarCatalogo(false);
       return true;
@@ -1004,7 +1043,42 @@
           throw new Error('Informe seu login e sua senha.');
         }
 
-        // Tenta com e-mail direto, ou caso o usuário tenha cadastrado com ou sem @
+        // 1. Tenta autenticar via tabela de usuários cadastrados no painel admin
+        if (client.loginUsuario) {
+          try {
+            const u = await client.loginUsuario(loginRaw, senha);
+            if (u && u.id) {
+              localStorage.removeItem('eisberg_user_token');
+              localStorage.removeItem('eisberg_user_refresh_token');
+              client.setToken(null);
+              localStorage.setItem('eisberg_user_mode', 'usuarios');
+              localStorage.setItem('eisberg_user_id', String(u.id));
+              localStorage.setItem('eisberg_user_nome', u.nome || '');
+              localStorage.setItem('eisberg_user_email', u.login || loginRaw);
+
+              $('app-senha').value = '';
+              $('app-login').hidden = true;
+              $('app-main').hidden = false;
+              const bEmail = $('user-badge-email');
+              if (bEmail) bEmail.textContent = u.login || loginRaw;
+              if (!$('cliente').value.trim()) {
+                $('cliente').value = u.nome || (u.login || loginRaw).split('@')[0];
+              }
+
+              atualizarConfigEmpresa(true);
+              carregarProximoCodigo();
+              carregarCatalogo(false);
+              return;
+            }
+          } catch (userErr) {
+            if (/desativado/i.test((userErr && userErr.message) || '')) {
+              throw userErr;
+            }
+            // Segue para fallback no Supabase Auth caso seja usuário antigo
+          }
+        }
+
+        // 2. Fallback: autentica no Supabase Auth (preserva todos os logins existentes)
         const emailTentativa = loginRaw.includes('@') ? loginRaw : `${loginRaw.toLowerCase()}@eisberg.com`;
 
         let res;
@@ -1023,6 +1097,9 @@
         }
 
         const emailFinal = (res.user && res.user.email) || loginRaw;
+        localStorage.removeItem('eisberg_user_mode');
+        localStorage.removeItem('eisberg_user_id');
+        localStorage.removeItem('eisberg_user_nome');
         localStorage.setItem('eisberg_user_token', res.access_token);
         if (res.refresh_token) {
           localStorage.setItem('eisberg_user_refresh_token', res.refresh_token);
@@ -1044,6 +1121,7 @@
         carregarProximoCodigo();
         carregarCatalogo(false);
       } catch (e) {
+        localStorage.removeItem('eisberg_user_mode');
         err.textContent = e.message === 'Invalid login credentials'
           ? 'Login ou senha incorretos no sistema.'
           : (e.message || 'Falha ao autenticar');
