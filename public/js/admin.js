@@ -1134,7 +1134,7 @@
       );
     }
 
-    main.replaceChildren(
+    main.replaceChildren(...[
       el('div', { class: 'cards' },
         stat('', 'Todos', totalGeral),
         ...Object.entries(STATUS).map(([k, v]) => stat(k, v, cont[k] || 0)),
@@ -1230,7 +1230,7 @@
           el('div', { class: 'empty', style: 'padding:32px 16px;text-align:center' },
             el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}${filtro.produto ? ' • ' + nomeProdutoFiltro : ''}".`),
             el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '', ranking: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
-    );
+    ].filter(Boolean));
     if (refocarBusca) {
       refocarBusca = false;
       busca.focus();
@@ -2112,7 +2112,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       }
     });
 
-    $('main').replaceChildren(
+    $('main').replaceChildren(...[
       bannerSetup,
       el('div', { class: 'cards' },
         statFiltro('', 'Total de produtos', totalProds),
@@ -2142,7 +2142,8 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
         ? el('div', { class: 'table-wrap' }, el('table', {},
           el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Estoque', 'Última Entrada (NF)', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
           el('tbody', {}, rows)))
-        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, totalProds ? 'Nenhum produto encontrado neste filtro.' : 'Nenhum produto cadastrado.')));
+        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, totalProds ? 'Nenhum produto encontrado neste filtro.' : 'Nenhum produto cadastrado.'))
+    ].filter(Boolean));
 
     if (refocarBuscaProdutos) {
       refocarBuscaProdutos = false;
@@ -2154,18 +2155,30 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
 
   function formMovimentoEstoque(prods, produtoSelecionado, tipoInicial = 'entrada') {
     if (!prods.length) return toast('Cadastre um produto primeiro', true);
+    const fixo = !!produtoSelecionado;
 
-    const porCat = new Map();
-    prods.forEach((p) => {
-      const cat = p.categoria || 'Outros';
-      if (!porCat.has(cat)) porCat.set(cat, []);
-      porCat.get(cat).push(p);
-    });
+    let selProd = null;
+    let campoProd = null;
+    if (fixo) {
+      campoProd = el(
+        'div',
+        { style: 'padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-weight:700;color:#334155' },
+        `${produtoSelecionado.nome} (Saldo atual: ${fmtQtdEstoque(produtoSelecionado.estoque || 0)})`
+      );
+    } else {
+      const porCat = new Map();
+      prods.forEach((p) => {
+        const cat = p.categoria || 'Outros';
+        if (!porCat.has(cat)) porCat.set(cat, []);
+        porCat.get(cat).push(p);
+      });
 
-    const selProd = el('select', {}, [...porCat.entries()].map(([cat, itens]) =>
-      el('optgroup', { label: cat }, itens.map((p) =>
-        el('option', { value: String(p.id), selected: produtoSelecionado && produtoSelecionado.id === p.id },
-          `${p.nome} (Saldo: ${fmtQtdEstoque(p.estoque || 0)})`)))));
+      selProd = el('select', {}, [...porCat.entries()].map(([cat, itens]) =>
+        el('optgroup', { label: cat }, itens.map((p) =>
+          el('option', { value: String(p.id) },
+            `${p.nome} (Saldo: ${fmtQtdEstoque(p.estoque || 0)})`)))));
+      campoProd = selProd;
+    }
 
     const selTipo = el('select', {},
       el('option', { value: 'entrada', selected: tipoInicial === 'entrada' }, '📥 Entrada de Estoque (NF / Reposição)'),
@@ -2181,7 +2194,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
     const atualizarPreview = () => {
       const ehEntrada = selTipo.value === 'entrada';
       wrapNf.style.display = ehEntrada ? '' : 'none';
-      const p = prods.find((x) => x.id === Number(selProd.value));
+      const p = fixo ? produtoSelecionado : prods.find((x) => x.id === Number(selProd.value));
       const atual = Number((p && p.estoque) || 0);
       const qtd = Number(inpQtd.value) || 0;
       const novo = ehEntrada ? atual + qtd : atual - qtd;
@@ -2189,14 +2202,14 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       preview.textContent = `Saldo atual: ${fmtQtdEstoque(atual)}  →  Novo saldo: ${fmtQtdEstoque(novo)}`;
     };
     ['change', 'input'].forEach((ev) => {
-      selProd.addEventListener(ev, atualizarPreview);
+      if (selProd) selProd.addEventListener(ev, atualizarPreview);
       selTipo.addEventListener(ev, atualizarPreview);
       inpQtd.addEventListener(ev, atualizarPreview);
     });
     atualizarPreview();
 
     const salvar = () => guard(async () => {
-      const produto_id = Number(selProd.value);
+      const produto_id = fixo ? Number(produtoSelecionado.id) : Number(selProd.value);
       const quantidade = Number(inpQtd.value);
       if (!produto_id) throw new Error('Selecione o produto');
       if (!(quantidade > 0)) throw new Error('Informe uma quantidade maior que zero');
@@ -2215,9 +2228,9 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       viewProdutos();
     });
 
-    openModal('📦 Movimentação de Estoque', el('div', {},
+    openModal(fixo ? `📦 Estoque — ${produtoSelecionado.nome}` : '📦 Movimentação de Estoque', el('div', {},
       group('Tipo de movimentação', selTipo),
-      group('Produto', selProd),
+      group('Produto', campoProd),
       el('div', { class: 'row2' },
         group('Quantidade *', inpQtd),
         group('Data *', inpData)),
@@ -2230,21 +2243,22 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
   }
 
   async function verHistoricoEstoque(prods, prodFiltro = null) {
+    const fixo = !!prodFiltro;
     let filtro = {
-      produtoId: prodFiltro ? String(prodFiltro.id) : '',
+      produtoId: fixo ? String(prodFiltro.id) : '',
       tipo: '',
       q: '',
     };
     let movs = [];
     try {
-      movs = await client.adminListarMovimentosEstoque();
+      movs = await client.adminListarMovimentosEstoque(fixo ? prodFiltro.id : null);
     } catch (e) {
       if (/estoque_movimentos/i.test((e && e.message) || '')) return modalSqlEstoque();
       throw e;
     }
 
     const bodyModal = el('div', {}, el('p', { class: 'summary' }, 'Carregando movimentações...'));
-    openModal(prodFiltro ? `📋 Histórico de Estoque — ${prodFiltro.nome}` : '📋 Histórico de Estoque e NFs', bodyModal, true);
+    openModal(fixo ? `📋 Histórico de Estoque — ${prodFiltro.nome}` : '📋 Histórico de Estoque e NFs', bodyModal, true);
 
     const TIPOS_MOV = {
       entrada: { lbl: '📥 Entrada', cls: 'badge-mov-entrada', sinal: '+' },
@@ -2265,7 +2279,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
             (m.pedido_id && String(m.pedido_id) === q);
         });
 
-      const selProd = el('select', { onchange: (e) => { filtro.produtoId = e.target.value; desenhar(); } },
+      const selProd = fixo ? null : el('select', { onchange: (e) => { filtro.produtoId = e.target.value; desenhar(); } },
         el('option', { value: '', selected: !filtro.produtoId }, 'Todos os produtos'),
         prods.map((p) => el('option', { value: String(p.id), selected: filtro.produtoId === String(p.id) }, p.nome)));
 
@@ -2283,25 +2297,33 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       });
 
       const recarregar = () => guard(async () => {
-        movs = await client.adminListarMovimentosEstoque();
+        movs = await client.adminListarMovimentosEstoque(fixo ? prodFiltro.id : null);
         desenhar();
       });
 
+      const cols = fixo
+        ? ['Data', 'Tipo', 'Qtd', 'NF / Pedido', 'Observação', '']
+        : ['Data', 'Produto', 'Tipo', 'Qtd', 'NF / Pedido', 'Observação', ''];
+
       bodyModal.replaceChildren(
         el('div', { class: 'toolbar' },
-          selProd,
+          ...(fixo ? [] : [selProd]),
           selTipo,
           busca,
           el('span', { class: 'grow' }),
           el('button', {
             class: 'btn sm btn-est-entrada',
-            onclick: () => formMovimentoEstoque(prods, prods.find((x) => String(x.id) === filtro.produtoId) || null, 'entrada'),
+            onclick: () => formMovimentoEstoque(
+              prods,
+              fixo ? prodFiltro : (prods.find((x) => String(x.id) === filtro.produtoId) || null),
+              'entrada'
+            ),
           }, '📥 + Nova Entrada'),
           el('button', { class: 'btn sm secondary', onclick: recarregar }, '🔄 Atualizar')),
         filtrados.length
           ? el('div', { class: 'table-wrap', style: 'max-height:56vh;overflow:auto;box-shadow:none;border:1px solid #e2e8f0' },
-              el('table', { style: 'min-width:680px' },
-                el('thead', {}, el('tr', {}, ...['Data', 'Produto', 'Tipo', 'Qtd', 'NF / Pedido', 'Observação', ''].map((h) => el('th', {}, h)))),
+              el('table', { style: fixo ? 'min-width:580px' : 'min-width:680px' },
+                el('thead', {}, el('tr', {}, ...cols.map((h) => el('th', {}, h)))),
                 el('tbody', {}, filtrados.map((m) => {
                   const tm = TIPOS_MOV[m.tipo] || { lbl: m.tipo, cls: 'off', sinal: '' };
                   const refCell = m.tipo === 'saida_pedido' && m.pedido_id
@@ -2309,7 +2331,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
                     : (m.numero_nf ? el('code', { style: 'background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:700' }, 'NF ' + m.numero_nf) : '—');
                   return el('tr', {},
                     el('td', { style: 'white-space:nowrap' }, fmtData(m.data)),
-                    el('td', {}, el('b', {}, m.produto_nome || ('#' + m.produto_id))),
+                    ...(fixo ? [] : [el('td', {}, el('b', {}, m.produto_nome || ('#' + m.produto_id)))]),
                     el('td', {}, el('span', { class: 'badge ' + tm.cls }, tm.lbl)),
                     el('td', { style: `font-weight:800;white-space:nowrap;color:${m.tipo === 'entrada' ? '#15803d' : '#b91c1c'}` }, `${tm.sinal}${fmtQtdEstoque(m.quantidade)}`),
                     el('td', { style: 'white-space:nowrap' }, refCell),
@@ -2340,8 +2362,16 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
   function formProduto(cats, p) {
     if (!cats.length) return toast('Cadastre uma categoria primeiro', true);
     const meiaInicial = p ? (p.permite_meia !== false && !(p.permite_meia === undefined && p.nome && p.nome.toLowerCase().includes('gelo'))) : true;
+    const catAtual = p ? cats.find((c) => c.id === p.categoria_id) : null;
+    const catLabel = p
+      ? (catAtual ? `${catAtual.nome}${catAtual.unidade ? ' (' + catAtual.unidade + ')' : ''}` : (p.categoria || ('#' + p.categoria_id)))
+      : '';
+    const campoCategoria = p
+      ? el('div', { style: 'padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-weight:700;color:#334155' }, catLabel)
+      : null;
+
     const f = {
-      categoria_id: el('select', {}, cats.map((c) => el('option', { value: String(c.id), selected: p && p.categoria_id === c.id }, `${c.nome}${c.unidade ? ' (' + c.unidade + ')' : ''} #${c.id}`))),
+      categoria_id: p ? null : el('select', {}, cats.map((c) => el('option', { value: String(c.id) }, `${c.nome}${c.unidade ? ' (' + c.unidade + ')' : ''} #${c.id}`))),
       nome: el('input', { value: p ? p.nome : '', maxlength: '100', required: '' }),
       preco: el('input', { type: 'number', step: '0.01', min: '0', value: String(p ? p.preco : 0) }),
       ordem: el('input', { type: 'number', value: String(p ? p.ordem : 0) }),
@@ -2350,7 +2380,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
     };
     const salvar = () => guard(async () => {
       const body = {
-        categoria_id: Number(f.categoria_id.value),
+        categoria_id: p ? Number(p.categoria_id) : Number(f.categoria_id.value),
         nome: f.nome.value,
         preco: Number(f.preco.value),
         ordem: Number(f.ordem.value),
@@ -2376,8 +2406,8 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       closeModal();
       viewProdutos();
     });
-    openModal(p ? 'Editar produto' : 'Novo produto', el('div', {},
-      group('Categoria', f.categoria_id), group('Nome', f.nome), group('Preço (R$)', f.preco), group('Ordem', f.ordem),
+    openModal(p ? `Editar produto — ${p.nome}` : 'Novo produto', el('div', {},
+      group('Categoria', p ? campoCategoria : f.categoria_id), group('Nome', f.nome), group('Preço (R$)', f.preco), group('Ordem', f.ordem),
       el('label', { class: 'check' }, f.permite_meia, 'Permitir 1/2 unidade (metade do preço)'),
       el('p', { style: 'font-size:12px;color:#777;margin:-4px 0 12px 24px;line-height:1.3' }, 'Se desmarcado (ex: Gelo), o app só permitirá quantidades inteiras (1, 2, 3...) e não exibirá o botão ½.'),
       el('label', { class: 'check' }, f.ativo, 'Ativo (visível no app)'),
