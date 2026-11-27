@@ -207,7 +207,7 @@
 
     async function adminListarPedidos(filtro) {
       filtro = filtro || {};
-      var qs = ['select=*,pedido_itens(quantidade,preco)', 'order=id.desc', 'limit=500'];
+      var qs = ['select=*,pedido_itens(produto_id,produto,categoria,quantidade,preco)', 'order=id.desc', 'limit=500'];
       if (filtro.status) qs.push('status=eq.' + encodeURIComponent(filtro.status));
       if (filtro.q) {
         var q = filtro.q;

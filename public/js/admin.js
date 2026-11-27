@@ -7,7 +7,7 @@
   const client = window.eisbergSupabase ? window.eisbergSupabase.createClient({ token: savedToken }) : null;
 
   let tab = 'pedidos';
-  let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
+  let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' };
   let paginacaoPedidos = { pagina: 1, limite: 20 };
   let refocarBusca = false;
 
@@ -739,6 +739,7 @@
 
   async function viewPedidos() {
     let pedidos = await obterPedidos(false);
+    const todosParaSelect = pedidos;
     if (filtro.q) {
       if (pedidos.length >= PEDIDOS_LIMITE_API) {
         pedidos = (await client.adminListarPedidos({ q: filtro.q, resumo: false })).pedidos;
@@ -748,8 +749,32 @@
     }
     const main = $('main');
 
-    // Filtrar pelo período selecionado
-    const pedidosNoPer = pedidos.filter((p) => pedidoNoPeriodo(p, filtro.periodo, filtro.dataInicio, filtro.dataFim));
+    const prodKey = (it) => semAcento(it.categoria || '') + '||' + semAcento(it.produto || '');
+    const catProds = new Map();
+    const rotuloProdMap = new Map();
+    const nomeCount = new Map();
+    [...todosParaSelect, ...pedidos].forEach((p) => {
+      (p.pedido_itens || []).forEach((it) => {
+        if (!it.produto) return;
+        const k = prodKey(it);
+        if (rotuloProdMap.has(k)) return;
+        const cat = it.categoria || 'Outros';
+        if (!catProds.has(cat)) catProds.set(cat, []);
+        catProds.get(cat).push({ key: k, nome: it.produto, cat });
+        rotuloProdMap.set(k, { nome: it.produto, cat });
+        const nl = semAcento(it.produto);
+        nomeCount.set(nl, (nomeCount.get(nl) || 0) + 1);
+      });
+    });
+    const prodInfoSel = filtro.produto ? rotuloProdMap.get(filtro.produto) : null;
+    const nomeProdutoFiltro = prodInfoSel
+      ? (nomeCount.get(semAcento(prodInfoSel.nome)) > 1 ? `${prodInfoSel.nome} (${prodInfoSel.cat})` : prodInfoSel.nome)
+      : (filtro.produto ? filtro.produto.split('||').pop() : '');
+
+    // Filtrar pelo período e produto selecionados
+    const pedidosNoPer = pedidos
+      .filter((p) => pedidoNoPeriodo(p, filtro.periodo, filtro.dataInicio, filtro.dataFim))
+      .filter((p) => !filtro.produto || (p.pedido_itens || []).some((it) => prodKey(it) === filtro.produto));
 
     // Contagem de status dentro do período selecionado
     const cont = { novo: 0, em_producao: 0, entregue: 0, cancelado: 0 };
@@ -761,10 +786,24 @@
     // Filtrar pelo status clicado (se houver)
     const pedidosExibidos = pedidosNoPer.filter((p) => !filtro.status || p.status === filtro.status);
 
-    // Totais do conjunto filtrado
+    const resumoProdPedido = (p) => {
+      if (!filtro.produto) return { qtd: Number(p.total_itens || 0), val: Number(p.total || 0) };
+      let qtd = 0, val = 0;
+      (p.pedido_itens || []).forEach((it) => {
+        if (prodKey(it) === filtro.produto) {
+          const q = Number(it.quantidade || 0);
+          qtd += q;
+          val += q * Number(it.preco || 0);
+        }
+      });
+      return { qtd, val };
+    };
+
+    // Totais do conjunto filtrado (quando há produto selecionado, soma o item filtrado)
     const totalRegistros = pedidosExibidos.length;
-    const totalValor = pedidosExibidos.reduce((acc, p) => acc + (p.total || 0), 0);
-    const totalItens = pedidosExibidos.reduce((acc, p) => acc + (p.total_itens || 0), 0);
+    const totalValor = pedidosExibidos.reduce((acc, p) => acc + resumoProdPedido(p).val, 0);
+    const totalItens = pedidosExibidos.reduce((acc, p) => acc + resumoProdPedido(p).qtd, 0);
+    const totalValorPedidosInteiros = pedidosExibidos.reduce((acc, p) => acc + (p.total || 0), 0);
 
     const agora = new Date();
     const ontemRef = new Date(agora);
@@ -808,8 +847,8 @@
       pedidosPaginados = pedidosExibidos.slice(inicioIdx, fimIdx);
     }
 
-    const totalValorPagina = pedidosPaginados.reduce((acc, p) => acc + (p.total || 0), 0);
-    const totalItensPagina = pedidosPaginados.reduce((acc, p) => acc + (p.total_itens || 0), 0);
+    const totalValorPagina = pedidosPaginados.reduce((acc, p) => acc + resumoProdPedido(p).val, 0);
+    const totalItensPagina = pedidosPaginados.reduce((acc, p) => acc + resumoProdPedido(p).qtd, 0);
 
     const stat = (key, label, n) =>
       el('div', { class: 'stat' + (filtro.status === key ? ' active' : ''), onclick: () => { filtro.status = (filtro.status === key ? '' : key); paginacaoPedidos.pagina = 1; viewPedidos(); } },
@@ -817,11 +856,17 @@
 
     const cardValor = el('div', { class: 'stat stat-valor', title: 'Valor total dos pedidos deste filtro' },
       el('b', { style: 'font-size:24px;color:#15803d;white-space:nowrap' }, brl(totalValor)),
-      el('span', { style: 'color:#166534;font-weight:700' }, `💰 Total Filtrado (${pedidosExibidos.length} ped. • ${totalItens} un.)`),
-      (limite > 0 && totalPaginas > 1)
+      el('span', { style: 'color:#166534;font-weight:700' },
+        filtro.produto
+          ? `📦 ${nomeProdutoFiltro} (${fmtQtdEstoque(totalItens)} un. • ${pedidosExibidos.length} ped.)`
+          : `💰 Total Filtrado (${pedidosExibidos.length} ped. • ${fmtQtdEstoque(totalItens)} un.)`),
+      filtro.produto
         ? el('div', { style: 'font-size:12px;color:#15803d;margin-top:4px;font-weight:600' },
-            `Nesta página (${pedidosPaginados.length} ped.): ${brl(totalValorPagina)}`)
-        : null
+            `Pedidos inteiros: ${brl(totalValorPedidosInteiros)}${(limite > 0 && totalPaginas > 1) ? ` • Pág.: ${brl(totalValorPagina)}` : ''}`)
+        : ((limite > 0 && totalPaginas > 1)
+          ? el('div', { style: 'font-size:12px;color:#15803d;margin-top:4px;font-weight:600' },
+              `Nesta página (${pedidosPaginados.length} ped.): ${brl(totalValorPagina)}`)
+          : null)
     );
 
     const busca = el('input', { type: 'search', placeholder: 'Buscar cliente, cidade, cód. ou nº', value: filtro.q });
@@ -868,6 +913,20 @@
       el('option', { value: 'personalizado', selected: filtro.periodo === 'personalizado' }, '📅 Escolher datas...')
     );
 
+    const catsOrdenadas = [...catProds.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const selectProduto = el('select', {
+      class: 'periodo-select',
+      title: 'Filtrar pedidos por produto',
+      style: 'border:1.5px solid #bbb;border-radius:8px;padding:7px 10px;font-size:13.5px;background:#fff;font-weight:600;cursor:pointer;max-width:240px',
+      onchange: (e) => { filtro.produto = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
+    },
+      el('option', { value: '', selected: !filtro.produto }, '📦 Todos os produtos'),
+      catsOrdenadas.map((cat) =>
+        el('optgroup', { label: cat },
+          catProds.get(cat).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map((item) =>
+            el('option', { value: item.key, selected: filtro.produto === item.key }, item.nome))))
+    );
+
     const inputDataIni = el('input', {
       type: 'date',
       value: filtro.dataInicio,
@@ -883,13 +942,13 @@
       onchange: (e) => { filtro.dataFim = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     });
 
-    const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim)
+    const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim || filtro.produto)
       ? el('button', {
         type: 'button',
         class: 'btn sm secondary',
         title: 'Limpar filtros',
         onclick: () => {
-          filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' };
+          filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' };
           paginacaoPedidos.pagina = 1;
           viewPedidos();
         }
@@ -1015,6 +1074,7 @@
           pill('mes_atual', 'Este Mês'),
           pill('mes_passado', 'Mês Passado'),
           selectPeriodo,
+          selectProduto,
           filtro.periodo === 'personalizado' ? el('div', { style: 'display:inline-flex;gap:4px;align-items:center' }, el('span', { style: 'font-size:12px' }, 'De:'), inputDataIni, el('span', { style: 'font-size:12px' }, 'Até:'), inputDataFim) : null
         ),
         btnLimpar,
@@ -1029,40 +1089,56 @@
         ? el('div', {},
             el('div', { class: 'table-wrap' }, el('table', {},
               el('thead', {}, el('tr', {}, ...['Nº', 'Cliente', 'Cidade', 'Data', 'Itens', 'Total', 'Status', ''].map((h) => el('th', {}, h)))),
-              el('tbody', {}, pedidosPaginados.map((p) =>
-                el('tr', {},
+              el('tbody', {}, pedidosPaginados.map((p) => {
+                const rp = resumoProdPedido(p);
+                return el('tr', {},
                   el('td', {}, '#' + p.id),
                   el('td', {}, el('b', {}, p.cliente), p.cod ? el('div', { style: 'font-size:12px;color:#888' }, 'Cód. ' + p.cod) : null),
                   el('td', {}, p.cidade),
                   el('td', {}, p.data || fmtData(p.criado_em)),
-                  el('td', {}, String(p.total_itens)),
-                  el('td', {}, p.total > 0 ? brl(p.total) : '—'),
+                  el('td', {},
+                    filtro.produto
+                      ? el('div', {},
+                          el('b', {}, fmtQtdEstoque(rp.qtd)),
+                          rp.qtd !== Number(p.total_itens || 0)
+                            ? el('div', { style: 'font-size:11.5px;color:#888' }, `de ${fmtQtdEstoque(p.total_itens || 0)} no ped.`)
+                            : null)
+                      : String(p.total_itens)),
+                  el('td', {},
+                    filtro.produto
+                      ? el('div', {},
+                          el('b', {}, rp.val > 0 ? brl(rp.val) : '—'),
+                          Math.abs(rp.val - Number(p.total || 0)) > 0.009
+                            ? el('div', { style: 'font-size:11.5px;color:#888' }, `Ped.: ${brl(p.total || 0)}`)
+                            : null)
+                      : (p.total > 0 ? brl(p.total) : '—')),
                   el('td', {}, el('span', { class: 'badge ' + p.status }, STATUS[p.status])),
                   el('td', { class: 'actions' },
                     el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(p.id)) }, 'Ver'),
                     el('button', { class: 'btn sm secondary', title: 'Imprimir cupom fiscal do pedido', onclick: () => guard(() => imprimirCupom(p.id)) }, '🖨 Imprimir'),
                     el('button', { class: 'btn sm secondary', onclick: () => guard(() => formPedido(p.id)) }, 'Editar'),
-                    el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir'))))),
+                    el('button', { class: 'btn sm danger', onclick: () => excluirPedido(p) }, 'Excluir')));
+              })),
               el('tfoot', {},
                 (limite > 0 && totalPaginas > 1)
                   ? [
                       el('tr', { class: 'table-footer-row', style: 'background:#f1f5f9' },
                         el('td', { colspan: '4', style: 'padding:10px 14px;font-weight:700;color:#475569' },
                           `Subtotal desta página (Mostrando ${inicioIdx + 1} a ${fimIdx}): ${pedidosPaginados.length} pedidos`),
-                        el('td', { style: 'padding:10px 14px;font-weight:700;color:#475569' }, `${totalItensPagina} un.`),
+                        el('td', { style: 'padding:10px 14px;font-weight:700;color:#475569' }, `${fmtQtdEstoque(totalItensPagina)} un.`),
                         el('td', { style: 'padding:10px 14px;font-weight:700;color:#15803d;font-size:15px' }, brl(totalValorPagina)),
                         el('td', { colspan: '2' }, '')),
                       el('tr', { class: 'table-footer-row' },
                         el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:800' },
-                          `Total Geral Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
-                        el('td', { style: 'padding:12px 14px;font-weight:800' }, `${totalItens} un.`),
+                          `Total Geral Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}${filtro.produto ? ' • ' + nomeProdutoFiltro : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
+                        el('td', { style: 'padding:12px 14px;font-weight:800' }, `${fmtQtdEstoque(totalItens)} un.`),
                         el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:17px' }, brl(totalValor)),
                         el('td', { colspan: '2' }, ''))
                     ]
                   : el('tr', { class: 'table-footer-row' },
                       el('td', { colspan: '4', style: 'padding:12px 14px;font-weight:800' },
-                        `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
-                      el('td', { style: 'padding:12px 14px;font-weight:800' }, `${totalItens} un.`),
+                        `Total Filtrado (${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''}${filtro.produto ? ' • ' + nomeProdutoFiltro : ''}): ${totalRegistros} pedido${totalRegistros === 1 ? '' : 's'}`),
+                      el('td', { style: 'padding:12px 14px;font-weight:800' }, `${fmtQtdEstoque(totalItens)} un.`),
                       el('td', { style: 'padding:12px 14px;font-weight:900;color:#15803d;font-size:17px' }, brl(totalValor)),
                       el('td', { colspan: '2' }, ''))
               )
@@ -1071,8 +1147,8 @@
           )
         : el('div', { class: 'table-wrap' },
           el('div', { class: 'empty', style: 'padding:32px 16px;text-align:center' },
-            el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}".`),
-            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
+            el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}${filtro.produto ? ' • ' + nomeProdutoFiltro : ''}".`),
+            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
     );
     if (refocarBusca) {
       refocarBusca = false;
