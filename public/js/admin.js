@@ -7,7 +7,7 @@
   const client = window.eisbergSupabase ? window.eisbergSupabase.createClient({ token: savedToken }) : null;
 
   let tab = 'pedidos';
-  let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' };
+  let filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '', ranking: '' };
   let paginacaoPedidos = { pagina: 1, limite: 20 };
   let refocarBusca = false;
 
@@ -772,9 +772,8 @@
       : (filtro.produto ? filtro.produto.split('||').pop() : '');
 
     // Filtrar pelo período e produto selecionados
-    const pedidosNoPer = pedidos
-      .filter((p) => pedidoNoPeriodo(p, filtro.periodo, filtro.dataInicio, filtro.dataFim))
-      .filter((p) => !filtro.produto || (p.pedido_itens || []).some((it) => prodKey(it) === filtro.produto));
+    const pedidosNoPerBase = pedidos.filter((p) => pedidoNoPeriodo(p, filtro.periodo, filtro.dataInicio, filtro.dataFim));
+    const pedidosNoPer = pedidosNoPerBase.filter((p) => !filtro.produto || (p.pedido_itens || []).some((it) => prodKey(it) === filtro.produto));
 
     // Contagem de status dentro do período selecionado
     const cont = { novo: 0, em_producao: 0, entregue: 0, cancelado: 0 };
@@ -927,6 +926,86 @@
             el('option', { value: item.key, selected: filtro.produto === item.key }, item.nome))))
     );
 
+    const selectRanking = el('select', {
+      class: 'periodo-select',
+      title: 'Ranking de produtos mais ou menos vendidos',
+      style: 'border:1.5px solid #bbb;border-radius:8px;padding:7px 10px;font-size:13.5px;background:#fff;font-weight:600;cursor:pointer',
+      onchange: (e) => { filtro.ranking = e.target.value; viewPedidos(); }
+    },
+      el('option', { value: '', selected: !filtro.ranking }, '📊 Mais / Menos vendidos'),
+      el('option', { value: 'mais', selected: filtro.ranking === 'mais' }, '🔥 Mais vendidos'),
+      el('option', { value: 'menos', selected: filtro.ranking === 'menos' }, '📉 Menos vendidos')
+    );
+
+    let blocoRanking = null;
+    if (filtro.ranking === 'mais' || filtro.ranking === 'menos') {
+      const baseRank = pedidosNoPerBase.filter((p) => !filtro.status || p.status === filtro.status);
+      const mapaRank = new Map();
+      baseRank.forEach((p) => {
+        (p.pedido_itens || []).forEach((it) => {
+          if (!it.produto) return;
+          const k = prodKey(it);
+          const q = Number(it.quantidade || 0);
+          const v = q * Number(it.preco || 0);
+          if (q <= 0) return;
+          let r = mapaRank.get(k);
+          if (!r) {
+            r = { key: k, nome: it.produto, cat: it.categoria || 'Outros', qtd: 0, valor: 0, pedSet: new Set() };
+            mapaRank.set(k, r);
+          }
+          r.qtd += q;
+          r.valor += v;
+          r.pedSet.add(p.id);
+        });
+      });
+      const listaRank = [...mapaRank.values()].sort((a, b) =>
+        filtro.ranking === 'mais'
+          ? (b.qtd - a.qtd) || (b.valor - a.valor)
+          : (a.qtd - b.qtd) || (a.valor - b.valor)
+      );
+      const totalValRank = listaRank.reduce((acc, r) => acc + r.valor, 0);
+
+      blocoRanking = el('div', { class: 'dash-box', style: 'margin-bottom:14px' },
+        el('div', { style: 'display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px' },
+          el('div', {},
+            el('h3', { style: 'margin:0;font-size:17px' },
+              filtro.ranking === 'mais' ? '🔥 Ranking: Produtos Mais Vendidos' : '📉 Ranking: Produtos Menos Vendidos'),
+            el('div', { class: 'dash-hint', style: 'margin:2px 0 0' },
+              `${rotuloPeriodo}${filtro.status ? ' • ' + STATUS[filtro.status] : ''} • ${listaRank.length} produto${listaRank.length === 1 ? '' : 's'} vendido${listaRank.length === 1 ? '' : 's'}`)),
+          el('button', {
+            type: 'button',
+            class: 'btn sm secondary',
+            onclick: () => { filtro.ranking = ''; viewPedidos(); },
+          }, '✕ Fechar')),
+        listaRank.length
+          ? el('div', { class: 'table-wrap', style: 'max-height:360px;overflow:auto;box-shadow:none;border:1px solid #e2e8f0' },
+              el('table', {},
+                el('thead', {}, el('tr', {}, ...['#', 'Produto', 'Categoria', 'Pedidos', 'Qtd. Vendida', 'Total (R$)', '% Valor', ''].map((h) => el('th', {}, h)))),
+                el('tbody', {}, listaRank.map((r, idx) => {
+                  const pct = totalValRank > 0 ? (r.valor / totalValRank) * 100 : 0;
+                  const selecionado = filtro.produto === r.key;
+                  return el('tr', { style: selecionado ? 'background:#fff5f5' : '' },
+                    el('td', { style: 'font-weight:800;color:#64748b' }, `${idx + 1}º`),
+                    el('td', {}, el('b', {}, r.nome)),
+                    el('td', { style: 'color:#475569' }, r.cat),
+                    el('td', {}, String(r.pedSet.size)),
+                    el('td', { style: 'font-weight:800;color:#111827' }, fmtQtdEstoque(r.qtd)),
+                    el('td', { style: 'font-weight:700;color:#15803d;white-space:nowrap' }, brl(r.valor)),
+                    el('td', { style: 'color:#64748b;white-space:nowrap' }, `${pct.toFixed(1).replace('.', ',')}%`),
+                    el('td', { class: 'actions' },
+                      el('button', {
+                        type: 'button',
+                        class: 'btn sm ' + (selecionado ? '' : 'secondary'),
+                        onclick: () => {
+                          filtro.produto = selecionado ? '' : r.key;
+                          paginacaoPedidos.pagina = 1;
+                          viewPedidos();
+                        },
+                      }, selecionado ? 'Filtrado ✓' : 'Ver pedidos')));
+                }))))
+          : el('div', { class: 'empty' }, 'Nenhum produto vendido neste filtro.'));
+    }
+
     const inputDataIni = el('input', {
       type: 'date',
       value: filtro.dataInicio,
@@ -942,13 +1021,13 @@
       onchange: (e) => { filtro.dataFim = e.target.value; paginacaoPedidos.pagina = 1; viewPedidos(); }
     });
 
-    const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim || filtro.produto)
+    const btnLimpar = (filtro.periodo !== 'todos' || filtro.status || filtro.q || filtro.dataInicio || filtro.dataFim || filtro.produto || filtro.ranking)
       ? el('button', {
         type: 'button',
         class: 'btn sm secondary',
         title: 'Limpar filtros',
         onclick: () => {
-          filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' };
+          filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '', ranking: '' };
           paginacaoPedidos.pagina = 1;
           viewPedidos();
         }
@@ -1075,6 +1154,7 @@
           pill('mes_passado', 'Mês Passado'),
           selectPeriodo,
           selectProduto,
+          selectRanking,
           filtro.periodo === 'personalizado' ? el('div', { style: 'display:inline-flex;gap:4px;align-items:center' }, el('span', { style: 'font-size:12px' }, 'De:'), inputDataIni, el('span', { style: 'font-size:12px' }, 'Até:'), inputDataFim) : null
         ),
         btnLimpar,
@@ -1085,6 +1165,7 @@
         ),
         el('button', { class: 'btn', onclick: () => guard(() => formPedido()) }, '+ Novo pedido')
       ),
+      blocoRanking,
       pedidosExibidos.length
         ? el('div', {},
             el('div', { class: 'table-wrap' }, el('table', {},
@@ -1148,7 +1229,7 @@
         : el('div', { class: 'table-wrap' },
           el('div', { class: 'empty', style: 'padding:32px 16px;text-align:center' },
             el('p', { style: 'font-size:16px;margin-bottom:12px;color:#666' }, `Nenhum pedido encontrado em "${rotuloPeriodo}${filtro.produto ? ' • ' + nomeProdutoFiltro : ''}".`),
-            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
+            el('button', { class: 'btn sm secondary', onclick: () => { filtro = { status: '', q: '', periodo: 'todos', dataInicio: '', dataFim: '', produto: '', ranking: '' }; paginacaoPedidos.pagina = 1; viewPedidos(); } }, 'Ver todos os pedidos')))
     );
     if (refocarBusca) {
       refocarBusca = false;
