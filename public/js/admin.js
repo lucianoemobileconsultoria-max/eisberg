@@ -2362,16 +2362,8 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
   function formProduto(cats, p) {
     if (!cats.length) return toast('Cadastre uma categoria primeiro', true);
     const meiaInicial = p ? (p.permite_meia !== false && !(p.permite_meia === undefined && p.nome && p.nome.toLowerCase().includes('gelo'))) : true;
-    const catAtual = p ? cats.find((c) => c.id === p.categoria_id) : null;
-    const catLabel = p
-      ? (catAtual ? `${catAtual.nome}${catAtual.unidade ? ' (' + catAtual.unidade + ')' : ''}` : (p.categoria || ('#' + p.categoria_id)))
-      : '';
-    const campoCategoria = p
-      ? el('div', { style: 'padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-weight:700;color:#334155' }, catLabel)
-      : null;
-
     const f = {
-      categoria_id: p ? null : el('select', {}, cats.map((c) => el('option', { value: String(c.id) }, `${c.nome}${c.unidade ? ' (' + c.unidade + ')' : ''} #${c.id}`))),
+      categoria_id: el('select', {}, cats.map((c) => el('option', { value: String(c.id), selected: p && p.categoria_id === c.id }, `${c.nome}${c.unidade ? ' (' + c.unidade + ')' : ''} #${c.id}`))),
       nome: el('input', { value: p ? p.nome : '', maxlength: '100', required: '' }),
       preco: el('input', { type: 'number', step: '0.01', min: '0', value: String(p ? p.preco : 0) }),
       ordem: el('input', { type: 'number', value: String(p ? p.ordem : 0) }),
@@ -2380,7 +2372,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
     };
     const salvar = () => guard(async () => {
       const body = {
-        categoria_id: p ? Number(p.categoria_id) : Number(f.categoria_id.value),
+        categoria_id: Number(f.categoria_id.value),
         nome: f.nome.value,
         preco: Number(f.preco.value),
         ordem: Number(f.ordem.value),
@@ -2407,7 +2399,7 @@ grant  execute on function public.excluir_movimento_estoque(bigint, text) to aut
       viewProdutos();
     });
     openModal(p ? `Editar produto — ${p.nome}` : 'Novo produto', el('div', {},
-      group('Categoria', p ? campoCategoria : f.categoria_id), group('Nome', f.nome), group('Preço (R$)', f.preco), group('Ordem', f.ordem),
+      group('Categoria', f.categoria_id), group('Nome', f.nome), group('Preço (R$)', f.preco), group('Ordem', f.ordem),
       el('label', { class: 'check' }, f.permite_meia, 'Permitir 1/2 unidade (metade do preço)'),
       el('p', { style: 'font-size:12px;color:#777;margin:-4px 0 12px 24px;line-height:1.3' }, 'Se desmarcado (ex: Gelo), o app só permitirá quantidades inteiras (1, 2, 3...) e não exibirá o botão ½.'),
       el('label', { class: 'check' }, f.ativo, 'Ativo (visível no app)'),
