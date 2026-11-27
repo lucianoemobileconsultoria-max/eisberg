@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="img/icon-192.png">
   <link rel="apple-touch-icon" href="img/icon-192.png">
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
   <!-- Login -->
@@ -62,12 +62,12 @@
   </div>
 
   <div id="modal-root"></div>
-  <script src="js/supabase-client.js?v=22"></script>
-  <script src="js/admin.js?v=22"></script>
+  <script src="js/supabase-client.js?v=23"></script>
+  <script src="js/admin.js?v=23"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=22').then((reg) => {
+        navigator.serviceWorker.register('sw.js?v=23').then((reg) => {
           reg.update();
         }).catch(console.error);
       });

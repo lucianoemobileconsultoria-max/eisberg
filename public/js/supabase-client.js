@@ -474,6 +474,39 @@
       return res === true;
     }
 
+    // --- Estoque (movimentações e baixa automática) ---
+    async function adminListarMovimentosEstoque(produtoId) {
+      var qs = ['select=*,produtos(nome,categorias(nome,unidade))', 'order=data.desc,id.desc', 'limit=500'];
+      if (produtoId) qs.push('produto_id=eq.' + Number(produtoId));
+      var rows = (await req('/rest/v1/estoque_movimentos?' + qs.join('&'))) || [];
+      return rows.map(function (m) {
+        m.produto_nome = (m.produtos && m.produtos.nome) || '';
+        m.categoria_nome = (m.produtos && m.produtos.categorias && m.produtos.categorias.nome) || '';
+        return m;
+      });
+    }
+
+    async function adminRegistrarMovimentoEstoque(dados) {
+      return await req('/rest/v1/rpc/admin_registrar_movimento_estoque', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_produto_id: Number(dados.produto_id),
+          p_tipo: dados.tipo || 'entrada',
+          p_quantidade: Number(dados.quantidade) || 0,
+          p_data: dados.data || null,
+          p_numero_nf: String(dados.numero_nf || '').trim(),
+          p_observacao: String(dados.observacao || '').trim(),
+        }),
+      });
+    }
+
+    async function excluirMovimentoEstoque(id, senha) {
+      return await req('/rest/v1/rpc/excluir_movimento_estoque', {
+        method: 'POST',
+        body: JSON.stringify({ p_id: id, p_senha: senha }),
+      });
+    }
+
     // --- Backup / Exportação Completa ---
     async function adminExportarTudo() {
       var resultados = await Promise.all([
@@ -482,7 +515,8 @@
         req('/rest/v1/pedidos?select=*,pedido_itens(*)&order=id.asc'),
         getConfig(),
         req('/rest/v1/despesas?select=*&order=data.asc,id.asc').catch(function () { return []; }),
-        adminListarUsuarios().catch(function () { return []; })
+        adminListarUsuarios().catch(function () { return []; }),
+        req('/rest/v1/estoque_movimentos?select=*&order=data.asc,id.asc').catch(function () { return []; })
       ]);
       var cats = resultados[0] || [];
       var prods = (resultados[1] || []).map(function (p) {
@@ -494,6 +528,7 @@
       var cfg = resultados[3] || {};
       var despesas = resultados[4] || [];
       var usuarios = resultados[5] || [];
+      var estoqueMovimentos = resultados[6] || [];
 
       return {
         sistema: 'EISBERG',
@@ -506,6 +541,7 @@
           total_pedidos: pedidos.length,
           total_despesas: despesas.length,
           total_usuarios: usuarios.length,
+          total_movimentos_estoque: estoqueMovimentos.length,
         },
         configuracoes: cfg,
         categorias: cats,
@@ -513,6 +549,7 @@
         pedidos: pedidos,
         despesas: despesas,
         usuarios: usuarios,
+        estoque_movimentos: estoqueMovimentos,
       };
     }
 
@@ -548,6 +585,9 @@
       excluirUsuario: excluirUsuario,
       loginUsuario: loginUsuario,
       validarUsuarioAtivo: validarUsuarioAtivo,
+      adminListarMovimentosEstoque: adminListarMovimentosEstoque,
+      adminRegistrarMovimentoEstoque: adminRegistrarMovimentoEstoque,
+      excluirMovimentoEstoque: excluirMovimentoEstoque,
     };
   }
 

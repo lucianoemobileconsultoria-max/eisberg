@@ -153,6 +153,7 @@
             el('li', {}, `${backup.resumo.total_pedidos} Pedidos completos (com todos os itens)`),
             backup.resumo.total_despesas ? el('li', {}, `${backup.resumo.total_despesas} Despesas registradas`) : null,
             backup.resumo.total_usuarios ? el('li', {}, `${backup.resumo.total_usuarios} Usuários cadastrados`) : null,
+            backup.resumo.total_movimentos_estoque ? el('li', {}, `${backup.resumo.total_movimentos_estoque} Movimentações de estoque`) : null,
             el('li', {}, `Configurações da empresa (${backup.configuracoes.nome_empresa || 'EISBERG'}, telefone e WhatsApp)`)
           )
         ),
@@ -1098,7 +1099,7 @@
   async function mudarStatus(id, status) {
     await guard(async () => {
       await client.adminAtualizarStatus(id, status);
-      toast('Status atualizado');
+      toast(status === 'entregue' ? 'Pedido concluído (entregue) — estoque atualizado!' : 'Status atualizado');
       verPedido(id);
       invalidarPedidosCache();
       carregar();
@@ -1662,8 +1663,167 @@
   }
 
   /* =================================================================
-     PRODUTOS
+     PRODUTOS + CONTROLE DE ESTOQUE
      ================================================================= */
+  const ESTOQUE_SQL = `alter table public.produtos add column if not exists estoque numeric(10,2) not null default 0;
+create table if not exists public.estoque_movimentos (
+  id          bigint generated always as identity primary key,
+  produto_id  bigint        not null references public.produtos(id) on delete cascade,
+  tipo        text          not null check (tipo in ('entrada', 'saida_manual', 'saida_pedido')),
+  quantidade  numeric(10,2) not null check (quantidade > 0 and quantidade <= 999999),
+  data        date          not null default current_date,
+  numero_nf   text          not null default '' check (char_length(btrim(numero_nf)) <= 60),
+  pedido_id   bigint        references public.pedidos(id) on delete cascade,
+  observacao  text          not null default '' check (char_length(btrim(observacao)) <= 300),
+  criado_em   timestamptz   not null default now()
+);
+create index if not exists estoque_mov_produto_idx on public.estoque_movimentos (produto_id, data desc, id desc);
+create index if not exists estoque_mov_pedido_idx  on public.estoque_movimentos (pedido_id) where pedido_id is not null;
+create index if not exists estoque_mov_data_idx    on public.estoque_movimentos (data desc, id desc);
+alter table public.estoque_movimentos enable row level security;
+drop policy if exists estoque_mov_select on public.estoque_movimentos;
+create policy estoque_mov_select on public.estoque_movimentos for select to authenticated using (public.is_admin());
+revoke all on public.estoque_movimentos from anon, authenticated;
+grant select on public.estoque_movimentos to authenticated;
+create or replace function public._estoque_movimentos_atualizar_saldo()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_delta_old numeric(10,2); v_delta_new numeric(10,2);
+begin
+  if tg_op = 'INSERT' then
+    v_delta_new := case when new.tipo = 'entrada' then new.quantidade else -new.quantidade end;
+    update public.produtos set estoque = estoque + v_delta_new where id = new.produto_id;
+    return new;
+  elsif tg_op = 'DELETE' then
+    v_delta_old := case when old.tipo = 'entrada' then old.quantidade else -old.quantidade end;
+    update public.produtos set estoque = estoque - v_delta_old where id = old.produto_id;
+    return old;
+  elsif tg_op = 'UPDATE' then
+    v_delta_old := case when old.tipo = 'entrada' then old.quantidade else -old.quantidade end;
+    v_delta_new := case when new.tipo = 'entrada' then new.quantidade else -new.quantidade end;
+    if old.produto_id = new.produto_id then
+      update public.produtos set estoque = estoque + (v_delta_new - v_delta_old) where id = new.produto_id;
+    else
+      update public.produtos set estoque = estoque - v_delta_old where id = old.produto_id;
+      update public.produtos set estoque = estoque + v_delta_new where id = new.produto_id;
+    end if;
+    return new;
+  end if;
+  return null;
+end; $$;
+drop trigger if exists trg_estoque_movimentos_saldo on public.estoque_movimentos;
+create trigger trg_estoque_movimentos_saldo after insert or update or delete on public.estoque_movimentos
+  for each row execute function public._estoque_movimentos_atualizar_saldo();
+create or replace function public._sincronizar_estoque_pedido(p_pedido_id bigint)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_status text; v_cliente text;
+begin
+  if p_pedido_id is null then return; end if;
+  delete from public.estoque_movimentos where pedido_id = p_pedido_id and tipo = 'saida_pedido';
+  select status, cliente into v_status, v_cliente from public.pedidos where id = p_pedido_id;
+  if v_status = 'entregue' then
+    insert into public.estoque_movimentos (produto_id, tipo, quantidade, data, numero_nf, pedido_id, observacao)
+    select pi.produto_id, 'saida_pedido', pi.quantidade, current_date, '', p_pedido_id,
+           'Baixa automática - Pedido #' || p_pedido_id || case when btrim(coalesce(v_cliente, '')) <> '' then ' (' || left(btrim(v_cliente), 120) || ')' else '' end
+      from public.pedido_itens pi where pi.pedido_id = p_pedido_id and pi.produto_id is not null and pi.quantidade > 0;
+  end if;
+end; $$;
+create or replace function public._trg_pedidos_estoque()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin perform public._sincronizar_estoque_pedido(new.id); return new; end; $$;
+drop trigger if exists trg_pedidos_estoque on public.pedidos;
+create trigger trg_pedidos_estoque after update of status on public.pedidos for each row
+  when (old.status is distinct from new.status) execute function public._trg_pedidos_estoque();
+create or replace function public._trg_pedidos_estoque_del()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin delete from public.estoque_movimentos where pedido_id = old.id and tipo = 'saida_pedido'; return old; end; $$;
+drop trigger if exists trg_pedidos_estoque_del on public.pedidos;
+create trigger trg_pedidos_estoque_del before delete on public.pedidos for each row execute function public._trg_pedidos_estoque_del();
+create or replace function public._trg_pedido_itens_estoque()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_pid bigint; v_status text;
+begin
+  v_pid := case when tg_op = 'DELETE' then old.pedido_id else new.pedido_id end;
+  select status into v_status from public.pedidos where id = v_pid;
+  if v_status = 'entregue' then perform public._sincronizar_estoque_pedido(v_pid); end if;
+  return null;
+end; $$;
+drop trigger if exists trg_pedido_itens_estoque on public.pedido_itens;
+create trigger trg_pedido_itens_estoque after insert or update or delete on public.pedido_itens
+  for each row execute function public._trg_pedido_itens_estoque();
+create or replace function public.admin_registrar_movimento_estoque(p_produto_id bigint, p_tipo text, p_quantidade numeric, p_data date default current_date, p_numero_nf text default '', p_observacao text default '')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_tipo text := lower(btrim(coalesce(p_tipo, 'entrada')));
+  v_qtd  numeric(10,2) := round(coalesce(p_quantidade, 0), 2);
+  v_data date := coalesce(p_data, current_date);
+  v_nf   text := left(btrim(coalesce(p_numero_nf, '')), 60);
+  v_obs  text := left(btrim(coalesce(p_observacao, '')), 300);
+  v_mov  public.estoque_movimentos%rowtype;
+  v_est  numeric(10,2);
+begin
+  if not public.is_admin() then raise exception 'Acesso negado'; end if;
+  if v_tipo not in ('entrada', 'saida_manual') then raise exception 'Tipo de movimentação inválido'; end if;
+  if v_qtd <= 0 or v_qtd > 999999 then raise exception 'Informe uma quantidade maior que zero'; end if;
+  if not exists (select 1 from public.produtos where id = p_produto_id) then raise exception 'Produto não encontrado'; end if;
+  insert into public.estoque_movimentos (produto_id, tipo, quantidade, data, numero_nf, observacao)
+  values (p_produto_id, v_tipo, v_qtd, v_data, v_nf, v_obs) returning * into v_mov;
+  select estoque into v_est from public.produtos where id = p_produto_id;
+  return jsonb_build_object('id', v_mov.id, 'produto_id', v_mov.produto_id, 'tipo', v_mov.tipo, 'quantidade', v_mov.quantidade, 'data', v_mov.data, 'numero_nf', v_mov.numero_nf, 'observacao', v_mov.observacao, 'criado_em', v_mov.criado_em, 'estoque_atual', v_est);
+end; $$;
+create or replace function public.excluir_movimento_estoque(p_id bigint, p_senha text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_tipo text;
+begin
+  perform public._checar_exclusao(p_senha);
+  select tipo into v_tipo from public.estoque_movimentos where id = p_id;
+  if not found then raise exception 'Movimentação não encontrada'; end if;
+  if v_tipo = 'saida_pedido' then raise exception 'Esta baixa está vinculada a um pedido concluído. Para estornar, altere o status do pedido.'; end if;
+  delete from public.estoque_movimentos where id = p_id;
+end; $$;
+revoke execute on function public._estoque_movimentos_atualizar_saldo() from public, anon, authenticated;
+revoke execute on function public._sincronizar_estoque_pedido(bigint)   from public, anon, authenticated;
+revoke execute on function public._trg_pedidos_estoque()                from public, anon, authenticated;
+revoke execute on function public._trg_pedidos_estoque_del()            from public, anon, authenticated;
+revoke execute on function public._trg_pedido_itens_estoque()           from public, anon, authenticated;
+revoke execute on function public.admin_registrar_movimento_estoque(bigint, text, numeric, date, text, text) from public;
+revoke execute on function public.excluir_movimento_estoque(bigint, text) from public;
+grant  execute on function public.admin_registrar_movimento_estoque(bigint, text, numeric, date, text, text) to authenticated;
+grant  execute on function public.excluir_movimento_estoque(bigint, text) to authenticated;`;
+
+  let produtosFiltro = { q: '', estoque: '' };
+  let refocarBuscaProdutos = false;
+
+  function fmtQtdEstoque(v) {
+    const n = Number(v || 0);
+    if (Number.isInteger(n)) return String(n);
+    return n.toFixed(2).replace(/0+$/, '').replace('.', ',');
+  }
+
+  function renderBadgeEstoque(val, ativoNoBanco) {
+    if (!ativoNoBanco) {
+      return el('span', { class: 'badge off', title: 'Execute o SQL do controle de estoque no Supabase para ativar' }, '—');
+    }
+    const cls = val < 0 ? 'badge-est-neg' : val === 0 ? 'badge-est-zero' : val <= 5 ? 'badge-est-baixo' : 'badge-est-ok';
+    return el('span', { class: 'badge ' + cls }, fmtQtdEstoque(val));
+  }
+
+  function modalSqlEstoque() {
+    const pre = el('textarea', { readonly: '', rows: '14', style: 'width:100%;font-family:Consolas,monospace;font-size:12px;border:1.5px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc' });
+    pre.value = ESTOQUE_SQL;
+    openModal('📦 Ativar Controle de Estoque no Supabase', el('div', {},
+      el('p', { style: 'font-size:14px;color:#333;line-height:1.5;margin:0 0 10px' },
+        'Para salvar entradas (com data e número da NF) e dar baixa automática quando o pedido for marcado como Entregue, execute este SQL uma única vez no Supabase. Ele não altera nem apaga nenhum dado existente.'),
+      el('ol', { style: 'font-size:13.5px;line-height:1.65;margin:0 0 12px 18px;padding:0' },
+        el('li', {}, 'Clique em ', el('b', {}, '📋 Copiar SQL'), '.'),
+        el('li', {}, 'Abra o ', el('a', { href: SQL_EDITOR_URL, target: '_blank', rel: 'noopener noreferrer', style: 'color:var(--red);font-weight:700' }, 'SQL Editor do Supabase'), ', cole e clique em ', el('b', {}, 'Run'), '.'),
+        el('li', {}, 'Volte aqui e clique em ', el('b', {}, '✅ Já executei'), '.')),
+      pre,
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn secondary', onclick: async () => { try { await navigator.clipboard.writeText(ESTOQUE_SQL); } catch (_) { pre.select(); document.execCommand('copy'); } toast('SQL copiado!'); } }, '📋 Copiar SQL'),
+        el('button', { class: 'btn', onclick: () => { closeModal(); viewProdutos(); } }, '✅ Já executei'),
+        el('button', { class: 'btn secondary', onclick: closeModal }, 'Fechar'))), true);
+  }
+
   function precoInput(p) {
     const inp = el('input', { type: 'number', step: '0.01', min: '0', value: Number(p.preco).toFixed(2), 'aria-label': 'Preço de ' + p.nome, style: 'width:100px;padding:5px 8px;border:1.5px solid #bbb;border-radius:6px;font-size:15px' });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
@@ -1678,33 +1838,346 @@
   }
 
   async function viewProdutos() {
-    const [prods, cats] = await Promise.all([client.adminListarProdutos(), client.getCatalogo()]);
+    const [prods, cats, movRes] = await Promise.all([
+      client.adminListarProdutos(),
+      client.getCatalogo(),
+      client.adminListarMovimentosEstoque().catch((e) => ({ __erroEstoque: e })),
+    ]);
+
+    const erroEst = movRes && movRes.__erroEstoque ? movRes.__erroEstoque : null;
+    const movs = Array.isArray(movRes) ? movRes : [];
+    const temColunaEstoque = !prods.length || prods[0].estoque !== undefined;
+    const estoqueAtivo = !erroEst && temColunaEstoque;
+
+    // Última entrada (NF + data) por produto
+    const ultimaEntradaPorProd = new Map();
+    let totalEntradas = 0;
+    movs.forEach((m) => {
+      if (m.tipo === 'entrada') {
+        totalEntradas++;
+        if (!ultimaEntradaPorProd.has(m.produto_id)) ultimaEntradaPorProd.set(m.produto_id, m);
+      }
+    });
+
+    const totalProds = prods.length;
+    const somaEstoque = prods.reduce((a, p) => a + Number(p.estoque || 0), 0);
+    const comEstoque = prods.filter((p) => Number(p.estoque || 0) > 0).length;
+    const semEstoque = prods.filter((p) => Number(p.estoque || 0) <= 0).length;
+
+    const prodsFiltrados = prods
+      .filter((p) => {
+        const q = semAcento(produtosFiltro.q).trim();
+        if (!q) return true;
+        return semAcento(p.nome).includes(q) || semAcento(p.categoria).includes(q);
+      })
+      .filter((p) => {
+        if (!produtosFiltro.estoque) return true;
+        const est = Number(p.estoque || 0);
+        return produtosFiltro.estoque === 'ok' ? est > 0 : est <= 0;
+      });
+
     let atual = null;
     const rows = [];
-    prods.forEach((p) => {
+    prodsFiltrados.forEach((p) => {
       if (p.categoria_id !== atual) {
         atual = p.categoria_id;
-        rows.push(el('tr', { class: 'group-row' }, el('td', { colspan: '6' }, p.categoria)));
+        rows.push(el('tr', { class: 'group-row' }, el('td', { colspan: '8' }, p.categoria)));
       }
       const meia = (p.permite_meia !== false && !(p.permite_meia === undefined && p.nome && p.nome.toLowerCase().includes('gelo')));
+      const ultEnt = ultimaEntradaPorProd.get(p.id);
+      const ultTxt = ultEnt
+        ? (ultEnt.numero_nf ? `NF ${ultEnt.numero_nf} • ${fmtData(ultEnt.data)}` : fmtData(ultEnt.data))
+        : '—';
+
       rows.push(el('tr', {},
         el('td', {}, el('b', {}, p.nome)),
         el('td', {}, precoInput(p)),
+        el('td', {}, renderBadgeEstoque(Number(p.estoque || 0), estoqueAtivo)),
+        el('td', { style: 'font-size:13px;color:#475569;white-space:nowrap' }, ultTxt),
         el('td', {}, el('span', { class: 'badge ' + (meia ? 'on' : 'off') }, meia ? '½ Sim' : '1 Inteiro')),
         el('td', {}, String(p.ordem)),
         el('td', {}, el('span', { class: 'badge ' + (p.ativo ? 'on' : 'off') }, p.ativo ? 'Ativo' : 'Inativo')),
         el('td', { class: 'actions' },
+          el('button', {
+            class: 'btn sm btn-est-entrada',
+            title: 'Registrar entrada de estoque (quantidade, data e NF)',
+            onclick: () => (estoqueAtivo ? formMovimentoEstoque(prods, p, 'entrada') : modalSqlEstoque()),
+          }, '+ Entrada'),
+          el('button', {
+            class: 'btn sm secondary',
+            title: 'Ver entradas e baixas deste produto',
+            onclick: () => (estoqueAtivo ? verHistoricoEstoque(prods, p) : modalSqlEstoque()),
+          }, 'Histórico'),
           el('button', { class: 'btn sm secondary', onclick: () => formProduto(cats, p) }, 'Editar'),
           el('button', { class: 'btn sm danger', onclick: () => excluirProduto(p) }, 'Excluir'))));
     });
+
+    const bannerSetup = !estoqueAtivo
+      ? el('div', { class: 'estoque-banner' },
+          el('div', {},
+            el('b', {}, '📦 Controle de estoque ainda não ativado no banco: '),
+            'rode o SQL de estoque uma única vez no Supabase para liberar entradas com NF e baixa automática ao concluir pedidos.'),
+          el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+            el('button', { class: 'btn sm', onclick: modalSqlEstoque }, '📋 Copiar / Ver SQL'),
+            el('a', { href: SQL_EDITOR_URL, target: '_blank', rel: 'noopener noreferrer', class: 'btn sm secondary' }, 'Abrir SQL Editor'),
+            el('button', { class: 'btn sm secondary', onclick: () => guard(() => viewProdutos()) }, '✅ Já executei')))
+      : null;
+
+    const statFiltro = (key, label, val, extraCls) =>
+      el('div', {
+        class: 'stat' + (extraCls ? ' ' + extraCls : '') + (produtosFiltro.estoque === key && key !== '__mov__' ? ' active' : ''),
+        onclick: () => {
+          if (key === '__mov__') {
+            if (!estoqueAtivo) return modalSqlEstoque();
+            return verHistoricoEstoque(prods, null);
+          }
+          produtosFiltro.estoque = (produtosFiltro.estoque === key ? '' : key);
+          viewProdutos();
+        },
+      }, el('b', { style: 'font-size:22px;white-space:nowrap' }, String(val)), el('span', {}, label));
+
+    const busca = el('input', { type: 'search', placeholder: 'Buscar produto ou categoria...', value: produtosFiltro.q });
+    let debounceBusca = null;
+    busca.addEventListener('input', () => {
+      clearTimeout(debounceBusca);
+      debounceBusca = setTimeout(() => {
+        produtosFiltro.q = busca.value.trim();
+        refocarBuscaProdutos = true;
+        viewProdutos();
+      }, 200);
+    });
+    busca.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(debounceBusca);
+        produtosFiltro.q = busca.value.trim();
+        refocarBuscaProdutos = true;
+        viewProdutos();
+      }
+    });
+
     $('main').replaceChildren(
-      el('div', { class: 'toolbar' }, el('span', { class: 'grow' }),
+      bannerSetup,
+      el('div', { class: 'cards' },
+        statFiltro('', 'Total de produtos', totalProds),
+        el('div', { class: 'stat stat-valor', style: 'cursor:default', title: 'Soma das unidades em estoque' },
+          el('b', { style: 'font-size:22px;white-space:nowrap' }, estoqueAtivo ? fmtQtdEstoque(somaEstoque) : '—'),
+          el('span', {}, '📦 Saldo total em estoque')),
+        statFiltro('ok', 'Com estoque (> 0)', estoqueAtivo ? comEstoque : '—'),
+        statFiltro('zero', 'Zerado / Negativo', estoqueAtivo ? semEstoque : '—'),
+        statFiltro('__mov__', 'Entradas (NFs) • ver histórico', estoqueAtivo ? totalEntradas : 'Ativar SQL')),
+      el('div', { class: 'toolbar' },
+        busca,
+        (produtosFiltro.q || produtosFiltro.estoque)
+          ? el('button', { class: 'btn sm secondary', onclick: () => { produtosFiltro = { q: '', estoque: '' }; viewProdutos(); } }, '✕ Limpar')
+          : null,
+        el('span', { class: 'grow' }),
+        el('button', {
+          class: 'btn btn-est-entrada',
+          onclick: () => (estoqueAtivo ? formMovimentoEstoque(prods, null, 'entrada') : modalSqlEstoque()),
+        }, '📥 + Entrada de Estoque'),
+        el('button', {
+          class: 'btn secondary',
+          onclick: () => (estoqueAtivo ? verHistoricoEstoque(prods, null) : modalSqlEstoque()),
+        }, '📋 Histórico / NFs'),
+        el('button', { class: 'btn secondary', onclick: () => guard(() => viewProdutos()) }, '🔄 Atualizar'),
         el('button', { class: 'btn', onclick: () => formProduto(cats) }, '+ Novo produto')),
       rows.length
         ? el('div', { class: 'table-wrap' }, el('table', {},
-          el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
+          el('thead', {}, el('tr', {}, ...['Produto', 'Preço', 'Estoque', 'Última Entrada (NF)', 'Opção 1/2', 'Ordem', 'Status', ''].map((h) => el('th', {}, h)))),
           el('tbody', {}, rows)))
-        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, 'Nenhum produto cadastrado.')));
+        : el('div', { class: 'table-wrap' }, el('div', { class: 'empty' }, totalProds ? 'Nenhum produto encontrado neste filtro.' : 'Nenhum produto cadastrado.')));
+
+    if (refocarBuscaProdutos) {
+      refocarBuscaProdutos = false;
+      busca.focus();
+      const n = busca.value.length;
+      try { busca.setSelectionRange(n, n); } catch (_) { }
+    }
+  }
+
+  function formMovimentoEstoque(prods, produtoSelecionado, tipoInicial = 'entrada') {
+    if (!prods.length) return toast('Cadastre um produto primeiro', true);
+
+    const porCat = new Map();
+    prods.forEach((p) => {
+      const cat = p.categoria || 'Outros';
+      if (!porCat.has(cat)) porCat.set(cat, []);
+      porCat.get(cat).push(p);
+    });
+
+    const selProd = el('select', {}, [...porCat.entries()].map(([cat, itens]) =>
+      el('optgroup', { label: cat }, itens.map((p) =>
+        el('option', { value: String(p.id), selected: produtoSelecionado && produtoSelecionado.id === p.id },
+          `${p.nome} (Saldo: ${fmtQtdEstoque(p.estoque || 0)})`)))));
+
+    const selTipo = el('select', {},
+      el('option', { value: 'entrada', selected: tipoInicial === 'entrada' }, '📥 Entrada de Estoque (NF / Reposição)'),
+      el('option', { value: 'saida_manual', selected: tipoInicial === 'saida_manual' }, '📤 Saída Manual / Ajuste'));
+
+    const inpQtd = el('input', { type: 'number', step: '0.5', min: '0.01', inputmode: 'decimal', placeholder: 'Ex: 20', required: '' });
+    const inpData = el('input', { type: 'date', value: hojeISO(), required: '' });
+    const inpNf = el('input', { type: 'text', maxlength: '60', placeholder: 'Ex: 001234' });
+    const inpObs = el('input', { type: 'text', maxlength: '300', placeholder: 'Ex: Fornecedor, lote ou motivo do ajuste' });
+    const wrapNf = group('Número da NF', inpNf);
+    const preview = el('div', { style: 'font-size:13.5px;font-weight:700;padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;margin-bottom:10px' });
+
+    const atualizarPreview = () => {
+      const ehEntrada = selTipo.value === 'entrada';
+      wrapNf.style.display = ehEntrada ? '' : 'none';
+      const p = prods.find((x) => x.id === Number(selProd.value));
+      const atual = Number((p && p.estoque) || 0);
+      const qtd = Number(inpQtd.value) || 0;
+      const novo = ehEntrada ? atual + qtd : atual - qtd;
+      preview.style.color = novo < 0 ? '#b91c1c' : '#15803d';
+      preview.textContent = `Saldo atual: ${fmtQtdEstoque(atual)}  →  Novo saldo: ${fmtQtdEstoque(novo)}`;
+    };
+    ['change', 'input'].forEach((ev) => {
+      selProd.addEventListener(ev, atualizarPreview);
+      selTipo.addEventListener(ev, atualizarPreview);
+      inpQtd.addEventListener(ev, atualizarPreview);
+    });
+    atualizarPreview();
+
+    const salvar = () => guard(async () => {
+      const produto_id = Number(selProd.value);
+      const quantidade = Number(inpQtd.value);
+      if (!produto_id) throw new Error('Selecione o produto');
+      if (!(quantidade > 0)) throw new Error('Informe uma quantidade maior que zero');
+      if (!inpData.value) throw new Error('Informe a data');
+
+      const res = await client.adminRegistrarMovimentoEstoque({
+        produto_id,
+        tipo: selTipo.value,
+        quantidade: Math.round(quantidade * 100) / 100,
+        data: inpData.value,
+        numero_nf: selTipo.value === 'entrada' ? inpNf.value.trim() : '',
+        observacao: inpObs.value.trim(),
+      });
+      toast(`${selTipo.value === 'entrada' ? 'Entrada' : 'Saída'} registrada! Novo saldo: ${fmtQtdEstoque(res && res.estoque_atual)}`);
+      closeModal();
+      viewProdutos();
+    });
+
+    openModal('📦 Movimentação de Estoque', el('div', {},
+      group('Tipo de movimentação', selTipo),
+      group('Produto', selProd),
+      el('div', { class: 'row2' },
+        group('Quantidade *', inpQtd),
+        group('Data *', inpData)),
+      wrapNf,
+      group('Observação (opcional)', inpObs),
+      preview,
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn btn-est-entrada', onclick: salvar }, 'Salvar movimentação'),
+        el('button', { class: 'btn secondary', onclick: closeModal }, 'Cancelar'))));
+  }
+
+  async function verHistoricoEstoque(prods, prodFiltro = null) {
+    let filtro = {
+      produtoId: prodFiltro ? String(prodFiltro.id) : '',
+      tipo: '',
+      q: '',
+    };
+    let movs = [];
+    try {
+      movs = await client.adminListarMovimentosEstoque();
+    } catch (e) {
+      if (/estoque_movimentos/i.test((e && e.message) || '')) return modalSqlEstoque();
+      throw e;
+    }
+
+    const bodyModal = el('div', {}, el('p', { class: 'summary' }, 'Carregando movimentações...'));
+    openModal(prodFiltro ? `📋 Histórico de Estoque — ${prodFiltro.nome}` : '📋 Histórico de Estoque e NFs', bodyModal, true);
+
+    const TIPOS_MOV = {
+      entrada: { lbl: '📥 Entrada', cls: 'badge-mov-entrada', sinal: '+' },
+      saida_pedido: { lbl: '🚚 Baixa Pedido', cls: 'badge-mov-pedido', sinal: '-' },
+      saida_manual: { lbl: '📤 Saída Manual', cls: 'badge-mov-manual', sinal: '-' },
+    };
+
+    const desenhar = () => {
+      const filtrados = movs
+        .filter((m) => !filtro.produtoId || String(m.produto_id) === filtro.produtoId)
+        .filter((m) => !filtro.tipo || m.tipo === filtro.tipo)
+        .filter((m) => {
+          const q = semAcento(filtro.q).trim();
+          if (!q) return true;
+          return semAcento(m.numero_nf).includes(q) ||
+            semAcento(m.observacao).includes(q) ||
+            semAcento(m.produto_nome).includes(q) ||
+            (m.pedido_id && String(m.pedido_id) === q);
+        });
+
+      const selProd = el('select', { onchange: (e) => { filtro.produtoId = e.target.value; desenhar(); } },
+        el('option', { value: '', selected: !filtro.produtoId }, 'Todos os produtos'),
+        prods.map((p) => el('option', { value: String(p.id), selected: filtro.produtoId === String(p.id) }, p.nome)));
+
+      const selTipo = el('select', { onchange: (e) => { filtro.tipo = e.target.value; desenhar(); } },
+        el('option', { value: '', selected: !filtro.tipo }, 'Todos os tipos'),
+        el('option', { value: 'entrada', selected: filtro.tipo === 'entrada' }, '📥 Entradas (NF)'),
+        el('option', { value: 'saida_pedido', selected: filtro.tipo === 'saida_pedido' }, '🚚 Baixas de Pedidos'),
+        el('option', { value: 'saida_manual', selected: filtro.tipo === 'saida_manual' }, '📤 Saídas Manuais'));
+
+      const busca = el('input', { type: 'search', placeholder: 'Buscar NF, pedido ou obs...', value: filtro.q, style: 'min-width:190px' });
+      let deb = null;
+      busca.addEventListener('input', () => {
+        clearTimeout(deb);
+        deb = setTimeout(() => { filtro.q = busca.value.trim(); desenhar(); }, 180);
+      });
+
+      const recarregar = () => guard(async () => {
+        movs = await client.adminListarMovimentosEstoque();
+        desenhar();
+      });
+
+      bodyModal.replaceChildren(
+        el('div', { class: 'toolbar' },
+          selProd,
+          selTipo,
+          busca,
+          el('span', { class: 'grow' }),
+          el('button', {
+            class: 'btn sm btn-est-entrada',
+            onclick: () => formMovimentoEstoque(prods, prods.find((x) => String(x.id) === filtro.produtoId) || null, 'entrada'),
+          }, '📥 + Nova Entrada'),
+          el('button', { class: 'btn sm secondary', onclick: recarregar }, '🔄 Atualizar')),
+        filtrados.length
+          ? el('div', { class: 'table-wrap', style: 'max-height:56vh;overflow:auto;box-shadow:none;border:1px solid #e2e8f0' },
+              el('table', { style: 'min-width:680px' },
+                el('thead', {}, el('tr', {}, ...['Data', 'Produto', 'Tipo', 'Qtd', 'NF / Pedido', 'Observação', ''].map((h) => el('th', {}, h)))),
+                el('tbody', {}, filtrados.map((m) => {
+                  const tm = TIPOS_MOV[m.tipo] || { lbl: m.tipo, cls: 'off', sinal: '' };
+                  const refCell = m.tipo === 'saida_pedido' && m.pedido_id
+                    ? el('button', { class: 'btn sm secondary', onclick: () => guard(() => verPedido(m.pedido_id)) }, `Pedido #${m.pedido_id}`)
+                    : (m.numero_nf ? el('code', { style: 'background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:700' }, 'NF ' + m.numero_nf) : '—');
+                  return el('tr', {},
+                    el('td', { style: 'white-space:nowrap' }, fmtData(m.data)),
+                    el('td', {}, el('b', {}, m.produto_nome || ('#' + m.produto_id))),
+                    el('td', {}, el('span', { class: 'badge ' + tm.cls }, tm.lbl)),
+                    el('td', { style: `font-weight:800;white-space:nowrap;color:${m.tipo === 'entrada' ? '#15803d' : '#b91c1c'}` }, `${tm.sinal}${fmtQtdEstoque(m.quantidade)}`),
+                    el('td', { style: 'white-space:nowrap' }, refCell),
+                    el('td', { style: 'font-size:13px;color:#475569' }, m.observacao || '—'),
+                    el('td', { class: 'actions' },
+                      m.tipo === 'saida_pedido'
+                        ? el('span', { style: 'font-size:12px;color:#64748b' }, 'Automática')
+                        : el('button', {
+                          class: 'btn sm danger',
+                          onclick: () => pedirSenha({
+                            titulo: 'Excluir movimentação?',
+                            mensagem: `${tm.lbl} de ${fmtQtdEstoque(m.quantidade)} un. em "${m.produto_nome || ''}" será estornada do saldo.`,
+                            executar: async (senha) => {
+                              await client.excluirMovimentoEstoque(m.id, senha);
+                              toast('Movimentação excluída e saldo ajustado');
+                              await recarregar();
+                              viewProdutos();
+                            },
+                          }),
+                        }, 'Excluir')));
+                }))))
+          : el('div', { class: 'empty' }, 'Nenhuma movimentação registrada neste filtro.'));
+    };
+
+    desenhar();
   }
 
   function formProduto(cats, p) {
